@@ -42,12 +42,13 @@ export function navRow(active = '') {
   );
 }
 
-// Earn row: the quick income actions.
+// Earn row: the quick income actions. (Open Case lives in navRow so it's on
+// every screen — keeping it out of here avoids a duplicate customId when both
+// rows render together.)
 export function earnRow() {
   return row(
     b('daily:claim', 'Daily', ButtonStyle.Success, '💰'),
     b('invest:collect', 'Collect', ButtonStyle.Success, '🤖'),
-    b('case:open', 'Open Case', ButtonStyle.Primary, '📦'),
   );
 }
 
