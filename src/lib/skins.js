@@ -8,7 +8,7 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CACHE_PATH = path.join(__dirname, 'skins.cache.json');
 const SKINS_URL =
-  'https://bymykel.github.io/CSGO-API/api/en/skins.json';
+  'https://raw.githubusercontent.com/ByMykel/CSGO-API/main/public/api/en/skins.json';
 
 // Rarity order, low -> high. Each tier defines drop weight + base coin value.
 export const RARITIES = {

@@ -58,8 +58,24 @@ client.on('interactionCreate', async (interaction) => {
   }
 });
 
-// Boot: set up DB, warm the skin cache, then log in.
+// Boot: set up DB, log in, and warm the skin cache. The skin load is wrapped
+// so a temporary CSGO-API outage logs a warning and retries in the background
+// instead of crash-looping the whole bot. Commands that need skins (/case,
+// /tradeup) call loadSkins() again on use, so they recover automatically once
+// the data is available.
 await initDb();
-await loadSkins();
 startMarketSweeper();
+
+async function warmSkins(attempt = 1) {
+  try {
+    await loadSkins();
+    console.log('Skin data loaded.');
+  } catch (err) {
+    const delay = Math.min(attempt * 30, 300); // back off, cap at 5 min
+    console.warn(`Skin data load failed (attempt ${attempt}): ${err.message}. Retrying in ${delay}s.`);
+    setTimeout(() => warmSkins(attempt + 1), delay * 1000);
+  }
+}
+warmSkins();
+
 await client.login(process.env.DISCORD_TOKEN);
