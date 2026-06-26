@@ -20,6 +20,7 @@ export async function initDb() {
       storage_cap INT    NOT NULL DEFAULT 50,
       sell_fee    INT    NOT NULL DEFAULT 15,   -- percent
       trade_bots  INT    NOT NULL DEFAULT 0,    -- passive coins/hour each
+      upgrades    JSONB  NOT NULL DEFAULT '{}'::jsonb, -- {key: level} per upgrade
       fast_mode   BOOLEAN NOT NULL DEFAULT FALSE, -- skip case reveal animation
       last_passive TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       last_daily   TIMESTAMPTZ,
@@ -68,6 +69,7 @@ export async function initDb() {
     ALTER TABLE market_listings ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ NOT NULL DEFAULT NOW() + INTERVAL '24 hours';
     ALTER TABLE market_listings ADD COLUMN IF NOT EXISTS base_value BIGINT NOT NULL DEFAULT 0;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS last_match TIMESTAMPTZ;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS upgrades JSONB NOT NULL DEFAULT '{}'::jsonb;
   `);
 }
 

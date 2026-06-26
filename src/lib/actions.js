@@ -9,6 +9,9 @@ import { rollSkin, skinValue, valueSqlExpression } from './skins.js';
 import { calcPassive, COINS_PER_BOT_PER_HOUR } from './passive.js';
 import { RARITY_EMOJI, wearBar, color } from './visuals.js';
 import { navRow, earnRow, playRow, row, sellButton, buyButton, marketNav, Btn } from './components.js';
+import {
+  UPGRADES, level, caseCostMult, floatScannerLevel, rareHunterBoost, dailyBonus,
+} from './upgrades.js';
 
 const b = Btn.b; // button builder shorthand
 
@@ -17,16 +20,25 @@ const PAGE_SIZE = 5;          // smaller pages so each can carry a Buy button ro
 const MARKET_FEE = 5;
 
 // ── HUB ─────────────────────────────────────────────────────────────
-// The main "Shack" screen: balance, bots, quick stats, and the action bar.
+// The main hub screen: balance, bots, top item, and the action bar.
 export async function hubScreen(userId) {
   const user = await getOrCreateUser(userId);
   const { rows: [{ count }] } = await pool.query(
     'SELECT COUNT(*) FROM inventory WHERE user_id = $1', [userId]);
   const { earned } = calcPassive(user);
 
+  // Find the most valuable skin (computed live from current rates).
+  const { rows: items } = await pool.query(
+    'SELECT name, rarity, wear, stattrak, image FROM inventory WHERE user_id = $1', [userId]);
+  let topItem = null;
+  for (const it of items) {
+    const v = skinValue({ rarity: it.rarity, wear: it.wear, stattrak: it.stattrak });
+    if (!topItem || v > topItem.value) topItem = { ...it, value: v };
+  }
+
   const embed = new EmbedBuilder()
     .setColor(0x4b69ff)
-    .setTitle('🏠 Your Skin Shack')
+    .setTitle('🏠 Your Skin Hub')
     .setDescription(
       `💰 **${user.coins.toLocaleString()}** coins\n` +
       `🎒 **${count}/${user.storage_cap}** skins\n` +
@@ -34,6 +46,17 @@ export async function hubScreen(userId) {
       (earned > 0 ? ` · **${earned.toLocaleString()}** ready to collect` : '')
     )
     .setFooter({ text: 'Open cases, collect income, climb the leaderboard' });
+
+  // Show the priciest skin with its thumbnail, if they own any.
+  if (topItem) {
+    const e = RARITY_EMOJI[topItem.rarity] ?? '▫️';
+    embed.addFields({
+      name: '💎 Most valuable skin',
+      value: `${e} ${topItem.stattrak ? 'StatTrak™ ' : ''}**${topItem.name}**\n` +
+        `${topItem.wear} · worth **${topItem.value.toLocaleString()}** coins`,
+    });
+    if (topItem.image) embed.setThumbnail(topItem.image);
+  }
 
   return { embeds: [embed], components: [earnRow(), playRow(), navRow('shack')] };
 }
@@ -43,18 +66,21 @@ export async function hubScreen(userId) {
 // the reveal (slash command does; buttons jump straight to result for speed).
 export async function openCase(userId) {
   const user = await getOrCreateUser(userId);
-  if (user.coins < CASE_COST) {
-    return { error: `You need ${CASE_COST} coins. You have ${user.coins.toLocaleString()}.` };
+  // Case Discount upgrade lowers the cost; Rare Hunter and Float Scanner
+  // improve the drop. All read from the user's upgrade levels.
+  const cost = Math.round(CASE_COST * caseCostMult(user.upgrades));
+  if (user.coins < cost) {
+    return { error: `You need ${cost.toLocaleString()} coins. You have ${user.coins.toLocaleString()}.` };
   }
 
-  const drop = await rollSkin();
+  const drop = await rollSkin(rareHunterBoost(user.upgrades), floatScannerLevel(user.upgrades));
   const client = await pool.connect();
   let outcome = 'ok';
   try {
     await client.query('BEGIN');
     const pay = await client.query(
       'UPDATE users SET coins = coins - $1 WHERE user_id = $2 AND coins >= $1',
-      [CASE_COST, userId]);
+      [cost, userId]);
     if (pay.rowCount === 0) { await client.query('ROLLBACK'); outcome = 'broke'; }
     else {
       const ins = await client.query(
@@ -68,7 +94,7 @@ export async function openCase(userId) {
   } catch (e) { await client.query('ROLLBACK'); throw e; }
   finally { client.release(); }
 
-  if (outcome === 'broke') return { error: `You no longer have ${CASE_COST} coins.` };
+  if (outcome === 'broke') return { error: `You no longer have ${cost.toLocaleString()} coins.` };
   if (outcome === 'full') return { error: `Storage full (${user.storage_cap}/${user.storage_cap}). Sell or upgrade.` };
 
   const emoji = RARITY_EMOJI[drop.rarity] ?? '▫️';
@@ -90,7 +116,8 @@ export async function openCase(userId) {
 export async function claimDaily(userId) {
   const DAILY_BASE = 500, COOLDOWN_MS = 20 * 3_600_000;
   const user = await getOrCreateUser(userId);
-  const total = DAILY_BASE + Math.floor(Math.random() * 300);
+  // Daily Boost upgrade adds a flat bonus per level.
+  const total = DAILY_BASE + Math.floor(Math.random() * 300) + dailyBonus(user.upgrades);
   const cutoff = new Date(Date.now() - COOLDOWN_MS).toISOString();
   const res = await pool.query(
     `UPDATE users SET coins = coins + $1, last_daily = NOW()
@@ -222,37 +249,74 @@ export async function marketScreen(userId, page = 1) {
 }
 
 // ── UPGRADES ────────────────────────────────────────────────────────
-const TRADEBOT_BASE = 2000, STORAGE_STEP = 25, STORAGE_BASE = 1500;
+// Two kinds of upgrade live here:
+//   1. The three "core" upgrades with bespoke effects (trade bot, storage, fee)
+//   2. The catalog upgrades from upgrades.js (bot efficiency, scanners, etc.)
+// All are shown on one clean shop screen with a Buy button each.
+const TRADEBOT_BASE = 500, STORAGE_STEP = 25, STORAGE_BASE = 1500;
 const FEE_MIN = 3, FEE_COST = 5000;
+
+function coreCosts(u) {
+  const botCost = TRADEBOT_BASE * (u.trade_bots + 1);
+  const storagePurchases = Math.round((u.storage_cap - 50) / STORAGE_STEP);
+  const storageCost = STORAGE_BASE * (storagePurchases + 1);
+  return { botCost, storageCost, feeCost: FEE_COST };
+}
 
 export async function upgradeScreen(userId) {
   const user = await getOrCreateUser(userId);
-  const botCost = TRADEBOT_BASE * (user.trade_bots + 1);
-  const storagePurchases = Math.round((user.storage_cap - 50) / STORAGE_STEP);
-  const storageCost = STORAGE_BASE * (storagePurchases + 1);
+  const { botCost, storageCost, feeCost } = coreCosts(user);
+  const ups = user.upgrades || {};
 
   const embed = new EmbedBuilder().setColor(0x4b69ff)
     .setTitle('🛠️ Upgrades')
-    .setDescription(`💰 You have **${user.coins.toLocaleString()}** coins`)
-    .addFields(
-      { name: `🤖 Trade bot — ${botCost.toLocaleString()}`,
-        value: `Owned: ${user.trade_bots} · earns ${(user.trade_bots * COINS_PER_BOT_PER_HOUR).toLocaleString()}/h` },
-      { name: `📦 Storage +${STORAGE_STEP} — ${storageCost.toLocaleString()}`,
-        value: `Current cap: ${user.storage_cap}` },
-      { name: `🏷️ Fee −1% — ${FEE_COST.toLocaleString()}`,
-        value: user.sell_fee <= FEE_MIN ? `At minimum (${FEE_MIN}%)` : `Current: ${user.sell_fee}%` },
-    );
+    .setDescription(`💰 You have **${user.coins.toLocaleString()}** coins\nTap a button to buy. Costs rise each level.`);
 
-  const buyRow = row(
-    b('upgrade:tradebot', 'Buy Bot', ButtonStyle.Success, '🤖'),
-    b('upgrade:storage', 'Buy Storage', ButtonStyle.Success, '📦'),
-    user.sell_fee > FEE_MIN ? b('upgrade:fee', 'Lower Fee', ButtonStyle.Success, '🏷️') : null,
+  // Core upgrades.
+  embed.addFields(
+    { name: `🤖 Trade Bot — ${botCost.toLocaleString()}`,
+      value: `Owned: **${user.trade_bots}** · passive income`, inline: true },
+    { name: `📦 Storage +${STORAGE_STEP} — ${storageCost.toLocaleString()}`,
+      value: `Cap: **${user.storage_cap}**`, inline: true },
+    { name: `🏷️ Sell Fee −1% — ${feeCost.toLocaleString()}`,
+      value: user.sell_fee <= FEE_MIN ? `Min (**${FEE_MIN}%**)` : `Now: **${user.sell_fee}%**`, inline: true },
   );
-  return { embeds: [embed], components: [buyRow, navRow()] };
+
+  // Catalog upgrades (levelled).
+  for (const [key, u] of Object.entries(UPGRADES)) {
+    const lvl = level(ups, key);
+    const maxed = lvl >= u.max;
+    embed.addFields({
+      name: `${u.emoji} ${u.name} — ${maxed ? 'MAX' : u.cost(lvl).toLocaleString()}`,
+      value: `Lv **${lvl}/${u.max}** · ${u.desc}`, inline: true,
+    });
+  }
+
+  // Buy buttons. Discord caps 5 rows & 5 buttons/row. We have 9 upgrades, so
+  // we lay them out as rows of buy buttons, then the nav row last (5 rows max).
+  const coreRow = row(
+    b('upgrade:tradebot', 'Bot', ButtonStyle.Success, '🤖'),
+    b('upgrade:storage', 'Storage', ButtonStyle.Success, '📦'),
+    user.sell_fee > FEE_MIN ? b('upgrade:fee', 'Fee', ButtonStyle.Success, '🏷️') : null,
+  );
+  // Catalog upgrades split across two rows (up to 5 each). Maxed ones are
+  // disabled so you can see they're complete.
+  const catKeys = Object.keys(UPGRADES);
+  const mkBtn = (key) => {
+    const u = UPGRADES[key];
+    const maxed = level(ups, key) >= u.max;
+    const btn = b(`upgrade:cat:${key}`, u.name.split(' ')[0], ButtonStyle.Primary, u.emoji);
+    if (maxed) btn.setDisabled(true).setStyle(ButtonStyle.Secondary);
+    return btn;
+  };
+  const catRow1 = row(...catKeys.slice(0, 3).map(mkBtn));
+  const catRow2 = row(...catKeys.slice(3, 6).map(mkBtn));
+
+  return { embeds: [embed], components: [coreRow, catRow1, catRow2, navRow('upgrade')] };
 }
 
-// Performs one upgrade purchase. kind = 'tradebot' | 'storage' | 'fee'.
-export async function buyUpgrade(userId, kind) {
+// Performs a purchase. kind = 'tradebot' | 'storage' | 'fee' | 'cat:<key>'.
+export async function buyUpgrade(userId, kind, catKey) {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -286,6 +350,25 @@ export async function buyUpgrade(userId, kind) {
         [FEE_COST, userId]);
       await client.query('COMMIT');
       return { ok: `🏷️ Sell fee reduced to ${u.sell_fee - 1}%.` };
+    }
+    if (kind === 'cat') {
+      const def = UPGRADES[catKey];
+      if (!def) { await client.query('ROLLBACK'); return { error: 'Unknown upgrade.' }; }
+      const ups = u.upgrades || {};
+      const lvl = level(ups, catKey);
+      if (lvl >= def.max) { await client.query('ROLLBACK'); return { error: `${def.name} is already maxed.` }; }
+      const cost = def.cost(lvl);
+      if (u.coins < cost) { await client.query('ROLLBACK'); return { error: `Need ${cost.toLocaleString()} coins.` }; }
+      // Collect pending passive before changing bot efficiency, so the new
+      // multiplier doesn't retroactively apply to already-accrued time.
+      const { earned } = calcPassive(u);
+      const newUps = { ...ups, [catKey]: lvl + 1 };
+      await client.query(
+        `UPDATE users SET coins = coins - $1 + $2, upgrades = $3::jsonb, last_passive = NOW()
+         WHERE user_id = $4`,
+        [cost, earned, JSON.stringify(newUps), userId]);
+      await client.query('COMMIT');
+      return { ok: `${def.emoji} ${def.name} upgraded to Lv ${lvl + 1} for ${cost.toLocaleString()}.` };
     }
     await client.query('ROLLBACK');
     return { error: 'Unknown upgrade.' };

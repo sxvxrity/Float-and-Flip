@@ -129,38 +129,40 @@ function weightedPick(items, weightFn) {
   return items[items.length - 1];
 }
 
-// Roll a single skin from a case. dropBoost shifts odds toward rarer tiers.
-// WARNING: the boost is applied as weight * boost^tierIndex, so it compounds
-// HARD on high tiers. At boost 1 it's neutral; boost 2 already makes knives
-// ~5% (from 0.3%); boost 3 makes them ~16%. Keep premium cases at boost <= 1.5
-// unless you really mean it. The clamp below is a safety rail, not a target.
-export async function rollSkin(dropBoost = 1) {
-  const boost = Math.min(Math.max(dropBoost, 1), 1.5); // clamp to a sane range
+// Roll a single skin from a case.
+//   dropBoost  — shifts rarity odds toward rarer tiers (Rare Hunter upgrade).
+//   floatLevel — 0..5, biases wear toward better conditions (Float Scanner).
+// WARNING: dropBoost is applied as weight * boost^tierIndex, so it compounds
+// HARD on high tiers. The clamp below keeps it in a safe range.
+export async function rollSkin(dropBoost = 1, floatLevel = 0) {
+  const boost = Math.min(Math.max(dropBoost, 1), 1.5);
   const skins = await loadSkins();
 
-  // Pick rarity (only tiers that actually have skins loaded)
   const tiers = RARITY_ORDER
     .filter((t) => skins[t].length > 0)
     .map((t) => ({ name: t, ...RARITIES[t] }));
 
   const tier = weightedPick(tiers, (t) => {
     const idx = RARITY_ORDER.indexOf(t.name);
-    return t.weight * Math.pow(boost, idx); // boost favors higher tiers
+    return t.weight * Math.pow(boost, idx);
   });
 
   const skin = skins[tier.name][Math.floor(Math.random() * skins[tier.name].length)];
-  const wear = weightedPick(WEARS, (w) => w.weight);
-  const stattrak = Math.random() < STATTRAK_CHANCE;
 
+  // Float Scanner nudges wear weights toward better conditions. WEARS is
+  // ordered best->worst; we multiply better wears' weights up by floatLevel.
+  const fl = Math.min(Math.max(floatLevel, 0), 5);
+  const wear = weightedPick(WEARS, (w) => {
+    const idx = WEARS.indexOf(w);          // 0 = Factory New ... 4 = Battle-Scarred
+    const betterness = (WEARS.length - 1 - idx) / (WEARS.length - 1); // 1 for FN, 0 for BS
+    return w.weight * (1 + 0.5 * fl * betterness); // up to +250% weight on FN at lv5
+  });
+
+  const stattrak = Math.random() < STATTRAK_CHANCE;
   const value = skinValue({ rarity: tier.name, wear: wear.name, stattrak });
 
   return {
-    skin_id: skin.id,
-    name: skin.name,
-    rarity: tier.name,
-    wear: wear.name,
-    stattrak,
-    value,
-    image: skin.image,
+    skin_id: skin.id, name: skin.name, rarity: tier.name,
+    wear: wear.name, stattrak, value, image: skin.image,
   };
 }

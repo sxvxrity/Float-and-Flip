@@ -12,6 +12,7 @@ import {
 import {
   casinoScreen, playSlots, playRoulette, playCoinflip,
   startBlackjack, blackjackHit, blackjackStand,
+  betPicker, rouletteChoice, coinflipChoice,
 } from './casino.js';
 import { playMatch } from './match.js';
 import { getOrCreateUser } from './db.js';
@@ -104,7 +105,8 @@ export async function handleButton(interaction) {
 
   // ── Buy an upgrade ──
   if (ns === 'upgrade') {
-    const res = await buyUpgrade(userId, action);
+    // action = tradebot|storage|fee|cat ; for 'cat', arg is the upgrade key.
+    const res = await buyUpgrade(userId, action, arg);
     if (res.error) return ephemeralReply(interaction, res.error);
     const screen = await upgradeScreen(userId);
     await interaction.update(screen);
@@ -133,6 +135,41 @@ export async function handleButton(interaction) {
     const screen = await myListingsScreen(userId);
     await interaction.update(screen);
     return ephemeralFollowUp(interaction, res.ok);
+  }
+
+  // ── Casino game selection: show the bet picker for the chosen game ──
+  if (ns === 'cas') {
+    return interaction.update(betPicker(action)); // action = slots|roulette|blackjack|coinflip
+  }
+
+  // ── Bet chosen: slots & blackjack play immediately; roulette & coinflip
+  //    go to a choice picker first. customId: bet:<game>:<amount> ──
+  if (ns === 'bet') {
+    const game = action;
+    const bet = Number(arg);
+    if (game === 'slots') {
+      return playResult(interaction, userId, await playSlots(userId, bet));
+    }
+    if (game === 'blackjack') {
+      const res = await startBlackjack(userId, bet);
+      if (res.error) return ephemeralReply(interaction, res.error);
+      return interaction.update(res.payload);
+    }
+    if (game === 'roulette') return interaction.update(rouletteChoice(bet));
+    if (game === 'coinflip') return interaction.update(coinflipChoice(bet));
+  }
+
+  // ── Play with a choice (roulette space / coinflip side) ──
+  // customId: play:<game>:<bet>:<choice>
+  if (ns === 'play') {
+    const parts = interaction.customId.split(':');
+    const game = parts[1], bet = Number(parts[2]), choice = parts[3];
+    if (game === 'roulette') {
+      return playResult(interaction, userId, await playRoulette(userId, bet, choice));
+    }
+    if (game === 'coinflip') {
+      return playResult(interaction, userId, await playCoinflip(userId, bet, choice));
+    }
   }
 
   // ── Casino: slots / roulette / coinflip "play again" (animated) ──

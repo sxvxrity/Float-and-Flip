@@ -9,6 +9,7 @@ import { pool, getOrCreateUser } from './db.js';
 import { rollSkin } from './skins.js';
 import { RARITY_EMOJI } from './visuals.js';
 import { navRow } from './components.js';
+import { matchMult } from './upgrades.js';
 
 const MATCH_COOLDOWN_MS = 30 * 60 * 1000; // 30 minutes between matches
 const WIN_COINS_MIN = 200;
@@ -64,8 +65,8 @@ export async function playMatch(userId) {
     return { animation, payload: { embeds: [embed], components: [navRow()] } };
   }
 
-  // Win: coins, and maybe a skin.
-  const coins = rnd(WIN_COINS_MIN, WIN_COINS_MAX);
+  // Win: coins (boosted by Match Winnings upgrade), and maybe a skin.
+  const coins = Math.round(rnd(WIN_COINS_MIN, WIN_COINS_MAX) * matchMult(user.upgrades));
   const you = 13;
   const enemy = rnd(3, 11);
 

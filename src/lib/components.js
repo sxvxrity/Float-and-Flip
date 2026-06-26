@@ -32,32 +32,35 @@ export function row(...buttons) {
 
 // ── Reusable button rows ────────────────────────────────────────────
 
-// Main navigation row shown under most screens (the "hub" bar).
+// Main navigation bar — pure navigation, all neutral grey EXCEPT the screen
+// you're currently on, which is highlighted blurple so you always know where
+// you are. No actions live here; those go in the action rows above it.
 export function navRow(active = '') {
+  const nav = (id, label, emoji, key) =>
+    b(id, label, active === key ? ButtonStyle.Primary : ButtonStyle.Secondary, emoji);
   return row(
-    b('case:open', 'Open Case', ButtonStyle.Primary, '📦'),
-    b('nav:inventory', 'Inventory', active === 'inventory' ? ButtonStyle.Success : ButtonStyle.Secondary, '🎒'),
-    b('nav:market', 'Market', active === 'market' ? ButtonStyle.Success : ButtonStyle.Secondary, '🛒'),
-    b('nav:upgrade', 'Upgrades', active === 'upgrade' ? ButtonStyle.Success : ButtonStyle.Secondary, '🛠️'),
-    b('nav:shack', 'Hub', active === 'shack' ? ButtonStyle.Success : ButtonStyle.Secondary, '🏠'),
+    nav('nav:shack', 'Hub', '🏠', 'shack'),
+    nav('nav:inventory', 'Inventory', '🎒', 'inventory'),
+    nav('nav:market', 'Market', '🛒', 'market'),
+    nav('nav:upgrade', 'Upgrades', '🛠️', 'upgrade'),
+    nav('nav:casino', 'Casino', '🎰', 'casino'),
   );
 }
 
-// Earn row: the quick income actions. (Open Case lives in navRow so it's on
-// every screen — keeping it out of here avoids a duplicate customId when both
-// rows render together.)
+// Primary action row for the hub: the things you DO to earn. Green = money in,
+// blurple = the headline action (opening a case).
 export function earnRow() {
   return row(
+    b('case:open', 'Open Case', ButtonStyle.Primary, '📦'),
     b('daily:claim', 'Daily', ButtonStyle.Success, '💰'),
     b('invest:collect', 'Collect', ButtonStyle.Success, '🤖'),
   );
 }
 
-// Play row: the higher-risk fun actions + leaderboard (shown on the hub).
+// Secondary action row for the hub: play a match, view rankings.
 export function playRow() {
   return row(
     b('match:play', 'Play Match', ButtonStyle.Primary, '🔫'),
-    b('nav:casino', 'Casino', ButtonStyle.Secondary, '🎰'),
     b('nav:leaderboard', 'Leaderboard', ButtonStyle.Secondary, '🏆'),
   );
 }

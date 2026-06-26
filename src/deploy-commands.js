@@ -1,5 +1,6 @@
-// Registers slash commands with Discord. Run once after changing commands:
-//   npm run deploy
+// Registers slash commands with Discord.
+//   npm run deploy            -> GLOBAL (every server the bot is in; ~1h to appear)
+//   npm run deploy -- guild   -> just your test guild (instant, for development)
 import { REST, Routes } from 'discord.js';
 import fs from 'fs';
 import path from 'path';
@@ -16,19 +17,24 @@ for (const file of fs.readdirSync(commandsDir).filter((f) => f.endsWith('.js')))
 }
 
 const rest = new REST().setToken(process.env.DISCORD_TOKEN);
+const guildMode = process.argv.includes('guild');
 
 try {
-  console.log(`Deploying ${commands.length} commands...`);
-  // Guild-scoped deploy is instant — great for testing.
-  // For global commands, swap to Routes.applicationCommands(CLIENT_ID).
-  await rest.put(
-    Routes.applicationGuildCommands(
-      process.env.CLIENT_ID,
-      process.env.GUILD_ID
-    ),
-    { body: commands }
-  );
+  if (guildMode) {
+    console.log(`Deploying ${commands.length} commands to test guild (instant)...`);
+    await rest.put(
+      Routes.applicationGuildCommands(process.env.CLIENT_ID, process.env.GUILD_ID),
+      { body: commands }
+    );
+  } else {
+    console.log(`Deploying ${commands.length} commands GLOBALLY (can take up to 1 hour to appear)...`);
+    await rest.put(
+      Routes.applicationCommands(process.env.CLIENT_ID),
+      { body: commands }
+    );
+  }
   console.log('Commands deployed.');
 } catch (err) {
   console.error(err);
 }
+

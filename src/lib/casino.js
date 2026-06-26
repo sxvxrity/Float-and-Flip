@@ -17,11 +17,65 @@ export async function casinoScreen(userId) {
     .setTitle('🎰 The Casino')
     .setDescription(
       `💰 **${user.coins.toLocaleString()}** coins\n\n` +
-      'Pick a game. Use the slash commands to set your bet:\n' +
-      '`/slots <bet>` · `/roulette <bet> <space>` · `/blackjack <bet>` · `/coinflip <bet> <side>`\n\n' +
+      'Pick a game below, then choose your bet.\n\n' +
       '*All games are provably fair with a small house edge.*')
     .setFooter({ text: 'Gamble responsibly — it\'s just coins, but still.' });
-  return { embeds: [embed], components: [navRow()] };
+
+  const gameRow = row(
+    b('cas:slots', 'Slots', ButtonStyle.Primary, '🎰'),
+    b('cas:roulette', 'Roulette', ButtonStyle.Primary, '🎡'),
+    b('cas:blackjack', 'Blackjack', ButtonStyle.Primary, '🃏'),
+    b('cas:coinflip', 'Coinflip', ButtonStyle.Primary, '🪙'),
+  );
+  return { embeds: [embed], components: [gameRow, navRow('casino')] };
+}
+
+// Preset bet amounts offered as buttons (no typing needed).
+const BET_PRESETS = [100, 500, 1000, 5000];
+
+// A bet-picker screen for a given game. After picking a bet, the customId
+// carries the game + amount so the handler knows what to play. For roulette
+// and coinflip the bet picker leads to a CHOICE picker (red/black, heads/tails).
+export function betPicker(game) {
+  const labels = {
+    slots: '🎰 Slots', roulette: '🎡 Roulette',
+    blackjack: '🃏 Blackjack', coinflip: '🪙 Coinflip',
+  };
+  const embed = new EmbedBuilder().setColor(0x9b59b6)
+    .setTitle(`${labels[game]} — pick your bet`)
+    .setDescription('Choose a stake, or use the slash command for a custom amount.');
+  const betRow = row(...BET_PRESETS.map((amt) =>
+    b(`bet:${game}:${amt}`, amt.toLocaleString(), ButtonStyle.Success, '💰')));
+  return { embeds: [embed], components: [betRow, row(
+    b('nav:casino', 'Back', ButtonStyle.Secondary, '◀️'))] };
+}
+
+// For roulette: after a bet is chosen, pick a simple space (red/black/even/odd).
+export function rouletteChoice(bet) {
+  const embed = new EmbedBuilder().setColor(0x9b59b6)
+    .setTitle(`🎡 Roulette — ${bet.toLocaleString()} coins`)
+    .setDescription('Pick where to bet. (For a single number, use `/roulette`.)');
+  const choiceRow = row(
+    b(`play:roulette:${bet}:red`, 'Red', ButtonStyle.Danger, '🔴'),
+    b(`play:roulette:${bet}:black`, 'Black', ButtonStyle.Secondary, '⚫'),
+    b(`play:roulette:${bet}:even`, 'Even', ButtonStyle.Primary),
+    b(`play:roulette:${bet}:odd`, 'Odd', ButtonStyle.Primary),
+  );
+  return { embeds: [embed], components: [choiceRow, row(
+    b('nav:casino', 'Back', ButtonStyle.Secondary, '◀️'))] };
+}
+
+// For coinflip: after a bet, pick heads or tails.
+export function coinflipChoice(bet) {
+  const embed = new EmbedBuilder().setColor(0x9b59b6)
+    .setTitle(`🪙 Coinflip — ${bet.toLocaleString()} coins`)
+    .setDescription('Heads or tails?');
+  const choiceRow = row(
+    b(`play:coinflip:${bet}:heads`, 'Heads', ButtonStyle.Primary, '👑'),
+    b(`play:coinflip:${bet}:tails`, 'Tails', ButtonStyle.Primary, '🪙'),
+  );
+  return { embeds: [embed], components: [choiceRow, row(
+    b('nav:casino', 'Back', ButtonStyle.Secondary, '◀️'))] };
 }
 
 // ── SLOTS ───────────────────────────────────────────────────────────
@@ -194,7 +248,17 @@ export async function playCoinflip(userId, bet, side) {
 // bust-first rule. Game state is held IN MEMORY keyed by userId, since a hand
 // is short-lived; it doesn't need DB persistence.
 
-const HANDS = new Map(); // userId -> { deck, player, dealer, bet }
+const HANDS = new Map(); // userId -> { deck, player, dealer, bet, startedAt }
+
+// Abandoned hands (started but never finished) would linger forever, so sweep
+// any older than 10 minutes. The bet was already taken at deal time, so the
+// player simply forfeited it — we just free the memory.
+setInterval(() => {
+  const cutoff = Date.now() - 10 * 60 * 1000;
+  for (const [uid, st] of HANDS) {
+    if ((st.startedAt ?? 0) < cutoff) HANDS.delete(uid);
+  }
+}, 5 * 60 * 1000).unref?.();
 
 function handValue(cards) {
   let total = 0, aces = 0;
@@ -232,7 +296,7 @@ export async function startBlackjack(userId, bet) {
   const deck = shuffledDeck();
   const player = [deck.pop(), deck.pop()];
   const dealer = [deck.pop(), deck.pop()];
-  const state = { deck, player, dealer, bet };
+  const state = { deck, player, dealer, bet, startedAt: Date.now() };
   HANDS.set(userId, state);
 
   // Immediate blackjack check.
@@ -263,9 +327,15 @@ export async function blackjackStand(userId) {
   return finishBlackjack(userId, state, 'showdown');
 }
 
-// Resolves a hand, pays out, and clears state.
+// Resolves a hand, pays out, and clears state. The FIRST line atomically
+// claims the hand: if a concurrent hit/stand already settled it, HANDS no
+// longer has it and we bail — preventing a double payout from rapid clicks.
 async function finishBlackjack(userId, state, reason) {
-  HANDS.delete(userId);
+  if (!HANDS.has(userId) || HANDS.get(userId) !== state) {
+    // Already settled by a racing action — do nothing, pay nothing.
+    return { error: 'That hand was already resolved.' };
+  }
+  HANDS.delete(userId); // claim it; no other call can now settle this state
   const pv = handValue(state.player), dv = handValue(state.dealer);
   let payout = 0, outcome = '';
 
