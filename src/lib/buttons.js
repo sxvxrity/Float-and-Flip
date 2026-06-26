@@ -7,6 +7,7 @@ import {
   hubScreen, openCase, claimDaily, collectIncome,
   inventoryScreen, sellItem, marketScreen, buyListing,
   upgradeScreen, buyUpgrade, unlistListing, myListingsScreen,
+  leaderboardScreen,
 } from './actions.js';
 import {
   casinoScreen, playSlots, playRoulette, playCoinflip,
@@ -49,7 +50,7 @@ export async function handleButton(interaction) {
 
   // ── Navigation: replace the current screen in place ──
   if (ns === 'nav') {
-    const screen = await buildNav(action, userId);
+    const screen = await buildNav(action, userId, interaction);
     return interaction.update(screen);
   }
 
@@ -163,15 +164,22 @@ export async function handleButton(interaction) {
     return playResult(interaction, userId, await playMatch(userId));
   }
 
+  // ── Leaderboard sort toggle ──
+  if (ns === 'lb') {
+    const screen = await leaderboardScreen(interaction.client, userId, action); // action = inventory|coins
+    return interaction.update(screen);
+  }
+
   // Unknown button — acknowledge silently so it doesn't error.
   return interaction.deferUpdate().catch(() => {});
 }
 
-async function buildNav(action, userId) {
+async function buildNav(action, userId, interaction) {
   if (action === 'inventory') return inventoryScreen(userId);
   if (action === 'market') return marketScreen(userId, 1);
   if (action === 'upgrade') return upgradeScreen(userId);
   if (action === 'listings') return myListingsScreen(userId);
   if (action === 'casino') return casinoScreen(userId);
+  if (action === 'leaderboard') return leaderboardScreen(interaction.client, userId, 'inventory');
   return hubScreen(userId);
 }

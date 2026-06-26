@@ -53,11 +53,12 @@ export function earnRow() {
   );
 }
 
-// Play row: the higher-risk fun actions (shown on the hub).
+// Play row: the higher-risk fun actions + leaderboard (shown on the hub).
 export function playRow() {
   return row(
     b('match:play', 'Play Match', ButtonStyle.Primary, '🔫'),
     b('nav:casino', 'Casino', ButtonStyle.Secondary, '🎰'),
+    b('nav:leaderboard', 'Leaderboard', ButtonStyle.Secondary, '🏆'),
   );
 }
 

@@ -5,7 +5,7 @@
 
 import { EmbedBuilder, ButtonStyle } from 'discord.js';
 import { pool, getOrCreateUser } from './db.js';
-import { rollSkin, skinValue } from './skins.js';
+import { rollSkin, skinValue, valueSqlExpression } from './skins.js';
 import { calcPassive, COINS_PER_BOT_PER_HOUR } from './passive.js';
 import { RARITY_EMOJI, wearBar, color } from './visuals.js';
 import { navRow, earnRow, playRow, row, sellButton, buyButton, marketNav, Btn } from './components.js';
@@ -335,6 +335,61 @@ export async function myListingsScreen(userId) {
   }
   components.push(navRow('market'));
   return { embeds: [embed], components };
+}
+
+// ── LEADERBOARD ─────────────────────────────────────────────────────
+// Needs `client` to resolve usernames and `userId` for the caller's own rank.
+// sort = 'inventory' | 'coins'. Toggle buttons swap between them.
+const LB_TOP_N = 10;
+
+export async function leaderboardScreen(client, userId, sort = 'inventory') {
+  await getOrCreateUser(userId);
+  const metric = sort === 'coins' ? 'u.coins' : 'COALESCE(inv.total, 0)';
+  const { rows } = await pool.query(`
+    WITH inv AS (
+      SELECT user_id, SUM(${valueSqlExpression()}) AS total
+      FROM inventory GROUP BY user_id
+    ),
+    ranked AS (
+      SELECT u.user_id, u.coins,
+             COALESCE(inv.total, 0) AS inv_value,
+             RANK() OVER (ORDER BY ${metric} DESC) AS rank
+      FROM users u LEFT JOIN inv ON inv.user_id = u.user_id
+    )
+    SELECT * FROM ranked ORDER BY rank ASC
+  `);
+
+  const embed = new EmbedBuilder().setColor(0xf1c40f)
+    .setTitle(`🏆 Leaderboard — ${sort === 'coins' ? 'Coins' : 'Inventory Value'}`);
+
+  if (rows.length === 0) {
+    embed.setDescription('No traders yet. Be the first with `/case`.');
+  } else {
+    const medals = ['🥇', '🥈', '🥉'];
+    const fmt = (r) => sort === 'coins'
+      ? `${Number(r.coins).toLocaleString()} coins`
+      : `${Number(r.inv_value).toLocaleString()} value`;
+
+    const top = rows.slice(0, LB_TOP_N);
+    const lines = await Promise.all(top.map(async (r, i) => {
+      let name = `User ${r.user_id.slice(0, 6)}`;
+      try { name = (await client.users.fetch(r.user_id)).username; } catch { /* left server */ }
+      return `${medals[i] ?? `**${i + 1}.**`} ${name} — ${fmt(r)}`;
+    }));
+    embed.setDescription(lines.join('\n'));
+
+    const me = rows.find((r) => r.user_id === userId);
+    if (me && me.rank > LB_TOP_N) {
+      embed.addFields({ name: 'Your rank', value: `**#${me.rank}** of ${rows.length} — ${fmt(me)}` });
+    }
+  }
+
+  // Sort toggle: highlight the active sort, offer the other.
+  const toggleRow = row(
+    b('lb:inventory', 'By Value', sort === 'inventory' ? ButtonStyle.Success : ButtonStyle.Secondary, '💎'),
+    b('lb:coins', 'By Coins', sort === 'coins' ? ButtonStyle.Success : ButtonStyle.Secondary, '💰'),
+  );
+  return { embeds: [embed], components: [toggleRow, navRow()] };
 }
 
 // ── MARKET buy ──────────────────────────────────────────────────────
