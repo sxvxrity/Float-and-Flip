@@ -10,6 +10,7 @@ const COOLDOWNS = {
   market: 1000,
   invest: 3000,
   daily: 3000,
+  button: 1500,
 };
 
 // Map of "userId:command" -> timestamp when the cooldown expires.

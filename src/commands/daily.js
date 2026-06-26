@@ -1,4 +1,4 @@
-import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
+import { SlashCommandBuilder, EmbedBuilder, MessageFlags } from 'discord.js';
 import { pool, getOrCreateUser } from '../lib/db.js';
 
 const DAILY_BASE = 500;
@@ -19,7 +19,7 @@ export async function execute(interaction) {
       const m = Math.floor((remaining % 3_600_000) / 60_000);
       return interaction.reply({
         content: `Already claimed. Come back in **${h}h ${m}m**.`,
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
     }
   }
@@ -46,7 +46,7 @@ export async function execute(interaction) {
     const m = Math.floor((remaining % 3_600_000) / 60_000);
     return interaction.reply({
       content: `Already claimed. Come back in **${h}h ${m}m**.`,
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   }
 

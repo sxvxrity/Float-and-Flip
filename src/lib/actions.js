@@ -3,12 +3,14 @@
 // whether a slash command or a button triggered it. Slash commands and the
 // button handler both call these, so game logic lives in exactly one place.
 
-import { EmbedBuilder } from 'discord.js';
+import { EmbedBuilder, ButtonStyle } from 'discord.js';
 import { pool, getOrCreateUser } from './db.js';
 import { rollSkin, skinValue } from './skins.js';
 import { calcPassive, COINS_PER_BOT_PER_HOUR } from './passive.js';
 import { RARITY_EMOJI, wearBar, color } from './visuals.js';
-import { navRow, earnRow, row, sellButton, buyButton, marketNav } from './components.js';
+import { navRow, earnRow, playRow, row, sellButton, buyButton, marketNav, Btn } from './components.js';
+
+const b = Btn.b; // button builder shorthand
 
 const CASE_COST = 250;
 const PAGE_SIZE = 5;          // smaller pages so each can carry a Buy button row
@@ -33,7 +35,7 @@ export async function hubScreen(userId) {
     )
     .setFooter({ text: 'Open cases, collect income, climb the leaderboard' });
 
-  return { embeds: [embed], components: [earnRow(), navRow('shack')] };
+  return { embeds: [embed], components: [earnRow(), playRow(), navRow('shack')] };
 }
 
 // ── OPEN CASE ───────────────────────────────────────────────────────
@@ -216,6 +218,122 @@ export async function marketScreen(userId, page = 1) {
     components.push(row(...rows.map((r) => buyButton(r.listing_id).setLabel(`Buy #${r.listing_id}`))));
   }
   components.push(marketNav(page, totalPages));
+  return { embeds: [embed], components };
+}
+
+// ── UPGRADES ────────────────────────────────────────────────────────
+const TRADEBOT_BASE = 2000, STORAGE_STEP = 25, STORAGE_BASE = 1500;
+const FEE_MIN = 3, FEE_COST = 5000;
+
+export async function upgradeScreen(userId) {
+  const user = await getOrCreateUser(userId);
+  const botCost = TRADEBOT_BASE * (user.trade_bots + 1);
+  const storagePurchases = Math.round((user.storage_cap - 50) / STORAGE_STEP);
+  const storageCost = STORAGE_BASE * (storagePurchases + 1);
+
+  const embed = new EmbedBuilder().setColor(0x4b69ff)
+    .setTitle('🛠️ Upgrades')
+    .setDescription(`💰 You have **${user.coins.toLocaleString()}** coins`)
+    .addFields(
+      { name: `🤖 Trade bot — ${botCost.toLocaleString()}`,
+        value: `Owned: ${user.trade_bots} · earns ${(user.trade_bots * COINS_PER_BOT_PER_HOUR).toLocaleString()}/h` },
+      { name: `📦 Storage +${STORAGE_STEP} — ${storageCost.toLocaleString()}`,
+        value: `Current cap: ${user.storage_cap}` },
+      { name: `🏷️ Fee −1% — ${FEE_COST.toLocaleString()}`,
+        value: user.sell_fee <= FEE_MIN ? `At minimum (${FEE_MIN}%)` : `Current: ${user.sell_fee}%` },
+    );
+
+  const buyRow = row(
+    b('upgrade:tradebot', 'Buy Bot', ButtonStyle.Success, '🤖'),
+    b('upgrade:storage', 'Buy Storage', ButtonStyle.Success, '📦'),
+    user.sell_fee > FEE_MIN ? b('upgrade:fee', 'Lower Fee', ButtonStyle.Success, '🏷️') : null,
+  );
+  return { embeds: [embed], components: [buyRow, navRow()] };
+}
+
+// Performs one upgrade purchase. kind = 'tradebot' | 'storage' | 'fee'.
+export async function buyUpgrade(userId, kind) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows: [u] } = await client.query(
+      'SELECT * FROM users WHERE user_id = $1 FOR UPDATE', [userId]);
+
+    if (kind === 'tradebot') {
+      const cost = TRADEBOT_BASE * (u.trade_bots + 1);
+      if (u.coins < cost) { await client.query('ROLLBACK'); return { error: `Need ${cost.toLocaleString()} coins.` }; }
+      const { earned } = calcPassive(u);
+      await client.query(
+        `UPDATE users SET coins = coins - $1 + $2, trade_bots = trade_bots + 1, last_passive = NOW()
+         WHERE user_id = $3`, [cost, earned, userId]);
+      await client.query('COMMIT');
+      return { ok: `🤖 Bought trade bot #${u.trade_bots + 1} for ${cost.toLocaleString()}.` };
+    }
+    if (kind === 'storage') {
+      const purchases = Math.round((u.storage_cap - 50) / STORAGE_STEP);
+      const cost = STORAGE_BASE * (purchases + 1);
+      if (u.coins < cost) { await client.query('ROLLBACK'); return { error: `Need ${cost.toLocaleString()} coins.` }; }
+      await client.query(
+        'UPDATE users SET coins = coins - $1, storage_cap = storage_cap + $2 WHERE user_id = $3',
+        [cost, STORAGE_STEP, userId]);
+      await client.query('COMMIT');
+      return { ok: `📦 Storage expanded to ${u.storage_cap + STORAGE_STEP} slots.` };
+    }
+    if (kind === 'fee') {
+      if (u.sell_fee <= FEE_MIN) { await client.query('ROLLBACK'); return { error: `Already at minimum (${FEE_MIN}%).` }; }
+      if (u.coins < FEE_COST) { await client.query('ROLLBACK'); return { error: `Need ${FEE_COST.toLocaleString()} coins.` }; }
+      await client.query('UPDATE users SET coins = coins - $1, sell_fee = sell_fee - 1 WHERE user_id = $2',
+        [FEE_COST, userId]);
+      await client.query('COMMIT');
+      return { ok: `🏷️ Sell fee reduced to ${u.sell_fee - 1}%.` };
+    }
+    await client.query('ROLLBACK');
+    return { error: 'Unknown upgrade.' };
+  } catch (e) { await client.query('ROLLBACK'); throw e; }
+  finally { client.release(); }
+}
+
+// ── UNLIST from market ──────────────────────────────────────────────
+export async function unlistListing(userId, listingId) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query(
+      'SELECT * FROM market_listings WHERE listing_id = $1 AND seller_id = $2 FOR UPDATE',
+      [listingId, userId]);
+    const lst = rows[0];
+    if (!lst) { await client.query('ROLLBACK'); return { error: `You have no listing #${listingId}.` }; }
+    await client.query(
+      `INSERT INTO inventory (user_id, skin_id, name, rarity, wear, stattrak, value, image)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+      [userId, lst.skin_id, lst.name, lst.rarity, lst.wear, lst.stattrak, lst.base_value, lst.image]);
+    await client.query('DELETE FROM market_listings WHERE listing_id = $1', [listingId]);
+    await client.query('COMMIT');
+    return { ok: `↩️ Unlisted **${lst.name}** — returned to your inventory.` };
+  } catch (e) { await client.query('ROLLBACK'); throw e; }
+  finally { client.release(); }
+}
+
+// ── "Your listings" screen with unlist buttons ──────────────────────
+export async function myListingsScreen(userId) {
+  await getOrCreateUser(userId);
+  const { rows } = await pool.query(
+    'SELECT * FROM market_listings WHERE seller_id = $1 ORDER BY price ASC LIMIT 5', [userId]);
+
+  const embed = new EmbedBuilder().setColor(0x4b69ff).setTitle('🏷️ Your Market Listings');
+  const components = [];
+  if (rows.length === 0) {
+    embed.setDescription('You have no active listings. List one with `/market list`.');
+  } else {
+    embed.setDescription(rows.map((r) => {
+      const e = RARITY_EMOJI[r.rarity] ?? '▫️';
+      const name = r.name.length > 32 ? r.name.slice(0, 29) + '…' : r.name;
+      return `${e} \`#${r.listing_id}\` ${r.stattrak ? 'ST™ ' : ''}**${name}** — **${Number(r.price).toLocaleString()}**`;
+    }).join('\n'));
+    components.push(row(...rows.map((r) =>
+      b(`market:unlist:${r.listing_id}`, `Unlist #${r.listing_id}`, ButtonStyle.Danger, '↩️'))));
+  }
+  components.push(navRow('market'));
   return { embeds: [embed], components };
 }
 

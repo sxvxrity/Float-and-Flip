@@ -1,4 +1,4 @@
-import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
+import { SlashCommandBuilder, EmbedBuilder, MessageFlags } from 'discord.js';
 import { pool, getOrCreateUser } from '../lib/db.js';
 import { rollSkin } from '../lib/skins.js';
 import { color, wearBar, RARITY_EMOJI } from '../lib/visuals.js';
@@ -17,7 +17,7 @@ export async function execute(interaction) {
   if (user.coins < CASE_COST) {
     return interaction.reply({
       content: `You need ${CASE_COST} coins to open a case. You have ${user.coins}.`,
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   }
 
@@ -29,7 +29,7 @@ export async function execute(interaction) {
   if (Number(count) >= user.storage_cap) {
     return interaction.reply({
       content: `Your storage is full (${count}/${user.storage_cap}). Sell some skins or upgrade storage.`,
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   }
 

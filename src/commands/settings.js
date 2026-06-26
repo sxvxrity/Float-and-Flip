@@ -1,4 +1,4 @@
-import { SlashCommandBuilder } from 'discord.js';
+import { SlashCommandBuilder, MessageFlags } from 'discord.js';
 import { pool, getOrCreateUser } from '../lib/db.js';
 
 export const data = new SlashCommandBuilder()
@@ -24,7 +24,7 @@ export async function execute(interaction) {
       content: enabled
         ? '⚡ Fast mode **on** — `/case` now skips the reveal animation.'
         : '🎁 Fast mode **off** — case openings will play the full reveal.',
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   }
 }

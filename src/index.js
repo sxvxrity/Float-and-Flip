@@ -1,4 +1,4 @@
-import { Client, GatewayIntentBits, Collection } from 'discord.js';
+import { Client, GatewayIntentBits, Collection, MessageFlags } from 'discord.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -28,7 +28,8 @@ for (const file of fs.readdirSync(commandsDir).filter((f) => f.endsWith('.js')))
 }
 
 // discord.js v14 uses the 'ready' event. (v15 renames it to 'clientReady'.)
-client.once('ready', () => {
+// This discord.js build emits 'clientReady' (the v15-style name).
+client.once('clientReady', () => {
   console.log(`Logged in as ${client.user.tag}`);
 });
 
@@ -37,13 +38,13 @@ client.on('interactionCreate', async (interaction) => {
   if (interaction.isButton()) {
     const wait = checkCooldown(interaction.user.id, 'button');
     if (wait > 0) {
-      return interaction.reply({ content: `Slow down — try again in ${(wait / 1000).toFixed(1)}s.`, ephemeral: true });
+      return interaction.reply({ content: `Slow down — try again in ${(wait / 1000).toFixed(1)}s.`, flags: MessageFlags.Ephemeral });
     }
     try {
       await handleButton(interaction);
     } catch (err) {
       console.error(err);
-      const msg = { content: 'Something went wrong.', ephemeral: true };
+      const msg = { content: 'Something went wrong.', flags: MessageFlags.Ephemeral };
       if (interaction.deferred || interaction.replied) await interaction.followUp(msg).catch(() => {});
       else await interaction.reply(msg).catch(() => {});
     }
@@ -59,7 +60,7 @@ client.on('interactionCreate', async (interaction) => {
   if (wait > 0) {
     return interaction.reply({
       content: `Slow down — try again in ${(wait / 1000).toFixed(1)}s.`,
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   }
 
@@ -67,7 +68,7 @@ client.on('interactionCreate', async (interaction) => {
     await command.execute(interaction);
   } catch (err) {
     console.error(err);
-    const msg = { content: 'Something went wrong.', ephemeral: true };
+    const msg = { content: 'Something went wrong.', flags: MessageFlags.Ephemeral };
     if (interaction.deferred || interaction.replied) {
       await interaction.followUp(msg);
     } else {

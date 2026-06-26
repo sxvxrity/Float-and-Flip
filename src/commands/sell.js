@@ -1,4 +1,4 @@
-import { SlashCommandBuilder } from 'discord.js';
+import { SlashCommandBuilder, MessageFlags } from 'discord.js';
 import { pool, getOrCreateUser } from '../lib/db.js';
 import { skinValue } from '../lib/skins.js';
 
@@ -34,7 +34,7 @@ export async function execute(interaction) {
       await client.query('ROLLBACK');
       return interaction.reply({
         content: `No skin with ID #${id} in your inventory.`,
-        ephemeral: true,
+        flags: MessageFlags.Ephemeral,
       });
     }
 

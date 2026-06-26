@@ -1,4 +1,4 @@
-import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
+import { SlashCommandBuilder, EmbedBuilder, MessageFlags } from 'discord.js';
 import { pool, getOrCreateUser } from '../lib/db.js';
 import { COINS_PER_BOT_PER_HOUR, calcPassive } from '../lib/passive.js';
 
@@ -111,7 +111,7 @@ export async function execute(interaction) {
         'SELECT * FROM users WHERE user_id = $1 FOR UPDATE', [user.user_id]);
       if (u.sell_fee <= FEE_MIN) {
         await client.query('ROLLBACK');
-        return interaction.reply({ content: `Your fee is already at the minimum (${FEE_MIN}%).`, ephemeral: true });
+        return interaction.reply({ content: `Your fee is already at the minimum (${FEE_MIN}%).`, flags: MessageFlags.Ephemeral });
       }
       if (u.coins < FEE_COST) {
         await client.query('ROLLBACK');
@@ -136,6 +136,6 @@ export async function execute(interaction) {
 function notEnough(interaction, cost, have) {
   return interaction.reply({
     content: `That costs ${cost.toLocaleString()} coins. You have ${have.toLocaleString()}.`,
-    ephemeral: true,
+    flags: MessageFlags.Ephemeral,
   });
 }

@@ -1,4 +1,4 @@
-import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
+import { SlashCommandBuilder, EmbedBuilder, MessageFlags } from 'discord.js';
 import { pool, getOrCreateUser } from '../lib/db.js';
 import { calcPassive, COINS_PER_BOT_PER_HOUR } from '../lib/passive.js';
 
@@ -13,7 +13,7 @@ export async function execute(interaction) {
     return interaction.reply({
       content:
         'You have no trade bots yet. Buy one with `/upgrade tradebot` to start earning passive income.',
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   }
 
@@ -22,7 +22,7 @@ export async function execute(interaction) {
   if (earned <= 0) {
     return interaction.reply({
       content: 'Your bots haven\'t earned anything yet — check back in a bit.',
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   }
 
@@ -38,7 +38,7 @@ export async function execute(interaction) {
   if (res.rowCount === 0) {
     return interaction.reply({
       content: 'Those earnings were just collected. Check back in a bit.',
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   }
 

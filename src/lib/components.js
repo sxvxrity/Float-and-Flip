@@ -38,6 +38,7 @@ export function navRow(active = '') {
     b('case:open', 'Open Case', ButtonStyle.Primary, '📦'),
     b('nav:inventory', 'Inventory', active === 'inventory' ? ButtonStyle.Success : ButtonStyle.Secondary, '🎒'),
     b('nav:market', 'Market', active === 'market' ? ButtonStyle.Success : ButtonStyle.Secondary, '🛒'),
+    b('nav:upgrade', 'Upgrades', active === 'upgrade' ? ButtonStyle.Success : ButtonStyle.Secondary, '🛠️'),
     b('nav:shack', 'Hub', active === 'shack' ? ButtonStyle.Success : ButtonStyle.Secondary, '🏠'),
   );
 }
@@ -49,6 +50,14 @@ export function earnRow() {
   return row(
     b('daily:claim', 'Daily', ButtonStyle.Success, '💰'),
     b('invest:collect', 'Collect', ButtonStyle.Success, '🤖'),
+  );
+}
+
+// Play row: the higher-risk fun actions (shown on the hub).
+export function playRow() {
+  return row(
+    b('match:play', 'Play Match', ButtonStyle.Primary, '🔫'),
+    b('nav:casino', 'Casino', ButtonStyle.Secondary, '🎰'),
   );
 }
 
@@ -67,6 +76,7 @@ export function marketNav(page, totalPages) {
   return row(
     page > 1 ? b(`market:page:${page - 1}`, 'Prev', ButtonStyle.Secondary, '◀️') : null,
     page < totalPages ? b(`market:page:${page + 1}`, 'Next', ButtonStyle.Secondary, '▶️') : null,
-    b('nav:inventory', 'Inventory', ButtonStyle.Secondary, '🎒'),
+    b('nav:listings', 'My Listings', ButtonStyle.Secondary, '🏷️'),
+    b('nav:shack', 'Hub', ButtonStyle.Secondary, '🏠'),
   );
 }

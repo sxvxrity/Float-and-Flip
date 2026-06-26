@@ -1,4 +1,4 @@
-import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
+import { SlashCommandBuilder, EmbedBuilder, MessageFlags } from 'discord.js';
 import { pool, getOrCreateUser } from '../lib/db.js';
 import { RARITY_ORDER, WEARS, loadSkins, skinValue } from '../lib/skins.js';
 import { color, wearBar, RARITY_EMOJI } from '../lib/visuals.js';
@@ -22,7 +22,7 @@ export async function execute(interaction) {
   const tierIdx = RARITY_ORDER.indexOf(rarity);
   const nextTier = RARITY_ORDER[tierIdx + 1];
   if (!nextTier) {
-    return interaction.reply({ content: `${rarity} is the top tier — can't trade up.`, ephemeral: true });
+    return interaction.reply({ content: `${rarity} is the top tier — can't trade up.`, flags: MessageFlags.Ephemeral });
   }
 
   // Grab the 10 cheapest of that rarity to consume.
@@ -35,7 +35,7 @@ export async function execute(interaction) {
   if (pool10.length < NEEDED) {
     return interaction.reply({
       content: `You need ${NEEDED} **${rarity}** skins to trade up. You have ${pool10.length}.`,
-      ephemeral: true,
+      flags: MessageFlags.Ephemeral,
     });
   }
 
