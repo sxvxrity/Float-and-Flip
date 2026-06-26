@@ -7,6 +7,7 @@ import { initDb } from './lib/db.js';
 import { loadSkins } from './lib/skins.js';
 import { startMarketSweeper } from './lib/sweeper.js';
 import { checkCooldown } from './lib/cooldown.js';
+import { handleButton } from './lib/buttons.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -32,6 +33,23 @@ client.once('ready', () => {
 });
 
 client.on('interactionCreate', async (interaction) => {
+  // Button clicks go to their own handler.
+  if (interaction.isButton()) {
+    const wait = checkCooldown(interaction.user.id, 'button');
+    if (wait > 0) {
+      return interaction.reply({ content: `Slow down — try again in ${(wait / 1000).toFixed(1)}s.`, ephemeral: true });
+    }
+    try {
+      await handleButton(interaction);
+    } catch (err) {
+      console.error(err);
+      const msg = { content: 'Something went wrong.', ephemeral: true };
+      if (interaction.deferred || interaction.replied) await interaction.followUp(msg).catch(() => {});
+      else await interaction.reply(msg).catch(() => {});
+    }
+    return;
+  }
+
   if (!interaction.isChatInputCommand()) return;
   const command = client.commands.get(interaction.commandName);
   if (!command) return;

@@ -2,6 +2,7 @@ import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
 import { pool, getOrCreateUser } from '../lib/db.js';
 import { RARITY_EMOJI, wearBar, color } from '../lib/visuals.js';
 import { skinValue } from '../lib/skins.js';
+import { marketScreen } from '../lib/actions.js';
 
 const PAGE_SIZE = 10;
 const MARKET_FEE = 5; // percent taken from the seller on a sale
@@ -41,39 +42,9 @@ export async function execute(interaction) {
 
 async function browse(interaction) {
   const page = Math.max(1, interaction.options.getInteger('page') ?? 1);
-  const offset = (page - 1) * PAGE_SIZE;
-
-  const { rows: [{ count }] } = await pool.query('SELECT COUNT(*) FROM market_listings');
-  const total = Number(count);
-  const { rows } = await pool.query(
-    `SELECT * FROM market_listings ORDER BY price ASC LIMIT $1 OFFSET $2`,
-    [PAGE_SIZE, offset]
-  );
-
-  if (rows.length === 0) {
-    return interaction.reply({
-      content: total === 0 ? 'The market is empty. List a skin with `/market list`.' : 'No listings on that page.',
-      ephemeral: true,
-    });
-  }
-
-  const lines = rows.map((r) => {
-    const emoji = RARITY_EMOJI[r.rarity] ?? '▫️';
-    const name = r.name.length > 42 ? r.name.slice(0, 39) + '…' : r.name;
-    const hoursLeft = Math.max(0, (new Date(r.expires_at) - Date.now()) / 3_600_000);
-    const left = hoursLeft >= 1 ? `${Math.floor(hoursLeft)}h` : `${Math.ceil(hoursLeft * 60)}m`;
-    return `${emoji} \`#${r.listing_id}\` ${r.stattrak ? 'ST™ ' : ''}**${name}** ` +
-      `\`${wearBar(r.wear)}\` — **${Number(r.price).toLocaleString()}** coins · ⏳${left}`;
-  });
-
-  const pages = Math.ceil(total / PAGE_SIZE);
-  const embed = new EmbedBuilder()
-    .setColor(0x4b69ff)
-    .setTitle('🛒 Market — cheapest first')
-    .setDescription(lines.join('\n'))
-    .setFooter({ text: `Page ${page}/${pages} · ${total} listings · buy with /market buy <id>` });
-
-  await interaction.reply({ embeds: [embed] });
+  // Use the shared button-driven market screen (Buy buttons + pagination).
+  const screen = await marketScreen(interaction.user.id, page);
+  return interaction.reply(screen);
 }
 
 async function list(interaction, user) {
