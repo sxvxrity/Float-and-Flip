@@ -20,16 +20,12 @@ const PAGE_SIZE = 5;          // smaller pages so each can carry a Buy button ro
 const MARKET_FEE = 5;
 
 // ── HUB ─────────────────────────────────────────────────────────────
-// The main hub screen: balance, bots, top item, and the action bar.
-// Pass `overrideEarned` to force the "ready to collect" display to a known
-// value (e.g. 0 immediately after collecting, so it clears right away).
-export async function hubScreen(userId, { overrideEarned } = {}) {
+export async function hubScreen(userId, { overrideEarned, confirmText } = {}) {
   const user = await getOrCreateUser(userId);
   const { rows: [{ count }] } = await pool.query(
     'SELECT COUNT(*) FROM inventory WHERE user_id = $1', [userId]);
   const earned = overrideEarned !== undefined ? overrideEarned : calcPassive(user).earned;
 
-  // Find the most valuable skin (computed live from current rates).
   const { rows: items } = await pool.query(
     'SELECT name, rarity, wear, stattrak, image FROM inventory WHERE user_id = $1', [userId]);
   let topItem = null;
@@ -42,6 +38,7 @@ export async function hubScreen(userId, { overrideEarned } = {}) {
     .setColor(0x4b69ff)
     .setTitle('🏠 Your Skin Hub')
     .setDescription(
+      (confirmText ? `${confirmText}\n\n` : '') +
       `💰 **${user.coins.toLocaleString()}** coins\n` +
       `🎒 **${count}/${user.storage_cap}** skins\n` +
       `🤖 **${user.trade_bots}** trade bot(s)` +
@@ -49,7 +46,6 @@ export async function hubScreen(userId, { overrideEarned } = {}) {
     )
     .setFooter(ownedFooter(userId, 'Open cases, collect income, climb the leaderboard'));
 
-  // Show the priciest skin with its thumbnail, if they own any.
   if (topItem) {
     const e = RARITY_EMOJI[topItem.rarity] ?? '▫️';
     embed.addFields({
@@ -132,11 +128,7 @@ export async function claimDaily(userId) {
     const h = Math.floor(rem / 3_600_000), m = Math.floor((rem % 3_600_000) / 60_000);
     return { error: `Already claimed. Come back in ${h}h ${m}m.` };
   }
-  // Return a refreshed hub so the balance updates immediately in the message.
-  const hub = await hubScreen(userId);
-  const confirmField = { name: '✅ Daily claimed', value: `💰 **+${total.toLocaleString()}** coins · come back in 20 hours`, inline: false };
-  hub.embeds[0] = EmbedBuilder.from(hub.embeds[0]).spliceFields(0, 0, confirmField);
-  return { payload: hub };
+  return { payload: await hubScreen(userId, { confirmText: `✅ Daily claimed **+${total.toLocaleString()}** coins · come back in 20 hours` }) };
 }
 
 // ── COLLECT (invest) ────────────────────────────────────────────────
@@ -152,12 +144,8 @@ export async function collectIncome(userId) {
     [earned, userId, new Date(user.last_passive).toISOString()]);
   if (res.rowCount === 0) return { error: 'Those earnings were just collected.' };
 
-  // Return the refreshed hub screen so the "X ready to collect" clears
-  // immediately — overrideEarned:0 forces the display to show nothing pending.
-  const confirmField = { name: '✅ Collected', value: `🤖 **+${earned.toLocaleString()}** coins from ${user.trade_bots} bot(s) over ${hours.toFixed(1)}h`, inline: false };
-  const hub = await hubScreen(userId, { overrideEarned: 0 });
-  hub.embeds[0] = EmbedBuilder.from(hub.embeds[0]).spliceFields(0, 0, confirmField);
-  return { payload: hub };
+  const confirmField = `✅ Collected **+${earned.toLocaleString()}** coins from ${user.trade_bots} bot(s) over ${hours.toFixed(1)}h`;
+  return { payload: await hubScreen(userId, { overrideEarned: 0, confirmText: confirmField }) };
 }
 
 // ── INVENTORY ───────────────────────────────────────────────────────
