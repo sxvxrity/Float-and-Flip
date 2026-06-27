@@ -1,3 +1,4 @@
+import { autoEphemeral } from '../lib/ephemeral.js';
 import { SlashCommandBuilder, EmbedBuilder, MessageFlags } from 'discord.js';
 import { pool, getOrCreateUser } from '../lib/db.js';
 import { calcPassive, COINS_PER_BOT_PER_HOUR } from '../lib/passive.js';
@@ -10,20 +11,13 @@ export async function execute(interaction) {
   const user = await getOrCreateUser(interaction.user.id);
 
   if (user.trade_bots <= 0) {
-    return interaction.reply({
-      content:
-        'You have no trade bots yet. Buy one with `/upgrade tradebot` to start earning passive income.',
-      flags: MessageFlags.Ephemeral,
-    });
+    return autoEphemeral(interaction, 'You have no trade bots yet. Buy one with `/upgrade tradebot` to start earning passive income.');
   }
 
   const { earned, hours } = calcPassive(user);
 
   if (earned <= 0) {
-    return interaction.reply({
-      content: 'Your bots haven\'t earned anything yet — check back in a bit.',
-      flags: MessageFlags.Ephemeral,
-    });
+    return autoEphemeral(interaction, "Your bots haven't earned anything yet — check back in a bit.");
   }
 
   // Pay out and reset the clock — but only if last_passive hasn't changed
@@ -36,10 +30,7 @@ export async function execute(interaction) {
   );
 
   if (res.rowCount === 0) {
-    return interaction.reply({
-      content: 'Those earnings were just collected. Check back in a bit.',
-      flags: MessageFlags.Ephemeral,
-    });
+    return autoEphemeral(interaction, 'Those earnings were just collected. Check back in a bit.');
   }
 
   const rate = user.trade_bots * COINS_PER_BOT_PER_HOUR;

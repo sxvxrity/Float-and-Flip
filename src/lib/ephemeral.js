@@ -33,6 +33,13 @@ function scheduleDelete(interaction) {
   }, AUTO_DELETE_MS);
 }
 
+// For slash commands that need a quick error reply that auto-deletes.
+// Shorter delay (10s) since errors are quick reads.
+export async function autoEphemeral(interaction, content) {
+  await interaction.reply({ content, flags: MessageFlags.Ephemeral });
+  setTimeout(() => interaction.deleteReply().catch(() => {}), 10_000);
+}
+
 // Plays an animated result for a SLASH COMMAND (first response). Defers, shows
 // each frame via editReply, then the final payload. Respects fast mode (caller
 // passes fast=true to skip frames). result = { animation?, payload, error? }.

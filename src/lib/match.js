@@ -8,7 +8,7 @@ import { chance, rnd, pick } from './fairrng.js';
 import { pool, getOrCreateUser } from './db.js';
 import { rollSkin } from './skins.js';
 import { RARITY_EMOJI } from './visuals.js';
-import { navRow } from './components.js';
+import { navRow, ownedFooter } from './components.js';
 import { matchMult } from './upgrades.js';
 
 const MATCH_COOLDOWN_MS = 30 * 60 * 1000; // 30 minutes between matches
@@ -61,7 +61,7 @@ export async function playMatch(userId) {
     const embed = new EmbedBuilder().setColor(0xe74c3c)
       .setTitle('🔫 Match Result — Defeat')
       .setDescription(`**${map}** · Final score **${you} : ${enemy}**\n\nYour team lost. No rewards this time — better luck next match.`)
-      .setFooter({ text: 'Next match available in 30 minutes' });
+      .setFooter(ownedFooter(userId, 'Next match available in 30 minutes'));
     return { animation, payload: { embeds: [embed], components: [navRow()] } };
   }
 
@@ -97,6 +97,6 @@ export async function playMatch(userId) {
     .setDescription(
       `**${map}** · Final score **${you} : ${enemy}**\n\n` +
       `🏆 Your team won!\n💰 **+${coins.toLocaleString()}** coins${skinLine}`)
-    .setFooter({ text: 'Next match available in 30 minutes' });
+    .setFooter(ownedFooter(userId, 'Next match available in 30 minutes'));
   return { animation, payload: { embeds: [embed], components: [navRow()] } };
 }

@@ -1,3 +1,4 @@
+import { autoEphemeral } from '../lib/ephemeral.js';
 import { SlashCommandBuilder, EmbedBuilder, MessageFlags } from 'discord.js';
 import { pool, getOrCreateUser } from '../lib/db.js';
 import { RARITY_EMOJI, wearBar, color } from '../lib/visuals.js';
@@ -51,10 +52,7 @@ async function list(interaction, user) {
   const id = interaction.options.getInteger('id');
   const price = interaction.options.getInteger('price');
   if (price < MIN_LISTING_PRICE) {
-    return interaction.reply({
-      content: `Minimum listing price is ${MIN_LISTING_PRICE} coins.`,
-      flags: MessageFlags.Ephemeral,
-    });
+    return autoEphemeral(interaction, `Minimum listing price is ${MIN_LISTING_PRICE} coins.`);
   }
 
   // Move the skin out of inventory and into listings, atomically.
@@ -72,7 +70,7 @@ async function list(interaction, user) {
     item = del.rows[0];
     if (!item) {
       await client.query('ROLLBACK');
-      return interaction.reply({ content: `No skin with ID #${id} in your inventory.`, flags: MessageFlags.Ephemeral });
+      return autoEphemeral(interaction, `No skin with ID #${id} in your inventory.`);
     }
 
     // Capture the skin's intrinsic value LIVE (current rates), not its frozen
@@ -191,7 +189,7 @@ async function unlist(interaction, user) {
     const lst = rows[0];
     if (!lst) {
       await client.query('ROLLBACK');
-      return interaction.reply({ content: `You have no listing with ID #${listingId}.`, flags: MessageFlags.Ephemeral });
+      return autoEphemeral(interaction, `You have no listing with ID #${listingId}.`);
     }
     // Return the skin at its intrinsic value, not the asking price — same
     // reason as buy: stops list-high-then-unlist inflating a skin's value.

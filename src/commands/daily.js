@@ -1,3 +1,4 @@
+import { autoEphemeral } from '../lib/ephemeral.js';
 import { SlashCommandBuilder, EmbedBuilder, MessageFlags } from 'discord.js';
 import { pool, getOrCreateUser } from '../lib/db.js';
 
@@ -17,10 +18,7 @@ export async function execute(interaction) {
       const remaining = COOLDOWN_MS - elapsed;
       const h = Math.floor(remaining / 3_600_000);
       const m = Math.floor((remaining % 3_600_000) / 60_000);
-      return interaction.reply({
-        content: `Already claimed. Come back in **${h}h ${m}m**.`,
-        flags: MessageFlags.Ephemeral,
-      });
+      return autoEphemeral(interaction, `Already claimed. Come back in **${h}h ${m}m}**.`);
     }
   }
 
@@ -44,10 +42,7 @@ export async function execute(interaction) {
     const remaining = Math.max(0, COOLDOWN_MS - elapsed);
     const h = Math.floor(remaining / 3_600_000);
     const m = Math.floor((remaining % 3_600_000) / 60_000);
-    return interaction.reply({
-      content: `Already claimed. Come back in **${h}h ${m}m**.`,
-      flags: MessageFlags.Ephemeral,
-    });
+    return autoEphemeral(interaction, `Already claimed. Come back in **${h}h ${m}m**.`);
   }
 
   const embed = new EmbedBuilder()

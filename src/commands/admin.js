@@ -1,3 +1,4 @@
+import { autoEphemeral } from '../lib/ephemeral.js';
 import { SlashCommandBuilder, MessageFlags } from 'discord.js';
 import { pool, getOrCreateUser } from '../lib/db.js';
 import { rollSkin } from '../lib/skins.js';
@@ -25,7 +26,7 @@ export const data = new SlashCommandBuilder()
 
 export async function execute(interaction) {
   if (interaction.user.id !== process.env.OWNER_ID) {
-    return interaction.reply({ content: 'This command is owner-only.', flags: MessageFlags.Ephemeral });
+    return autoEphemeral(interaction, 'This command is owner-only.');
   }
 
   const sub = interaction.options.getSubcommand();
@@ -38,13 +39,13 @@ export async function execute(interaction) {
     if (sub === 'givecoins') {
       const amount = interaction.options.getInteger('amount');
       await pool.query('UPDATE users SET coins = coins + $1 WHERE user_id = $2', [amount, target.id]);
-      return interaction.reply({ content: `✅ Gave **${amount.toLocaleString()}** coins to ${target}.`, flags: MessageFlags.Ephemeral });
+      return autoEphemeral(interaction, `✅ Gave **${amount.toLocaleString()}** coins to ${target}.`);
     }
 
     if (sub === 'setcoins') {
       const amount = interaction.options.getInteger('amount');
       await pool.query('UPDATE users SET coins = $1 WHERE user_id = $2', [amount, target.id]);
-      return interaction.reply({ content: `✅ Set ${target}'s balance to **${amount.toLocaleString()}** coins.`, flags: MessageFlags.Ephemeral });
+      return autoEphemeral(interaction, `✅ Set ${target}'s balance to **${amount.toLocaleString()}** coins.`);
     }
 
     if (sub === 'giveskin') {

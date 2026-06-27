@@ -38,7 +38,9 @@ client.on('interactionCreate', async (interaction) => {
   if (interaction.isButton()) {
     const wait = checkCooldown(interaction.user.id, 'button');
     if (wait > 0) {
-      return interaction.reply({ content: `Slow down — try again in ${(wait / 1000).toFixed(1)}s.`, flags: MessageFlags.Ephemeral });
+      await interaction.reply({ content: `Slow down — try again in ${(wait / 1000).toFixed(1)}s.`, flags: MessageFlags.Ephemeral });
+      setTimeout(() => interaction.deleteReply().catch(() => {}), 5000);
+      return;
     }
     try {
       await handleButton(interaction);
@@ -58,10 +60,12 @@ client.on('interactionCreate', async (interaction) => {
   // Per-user rate limit on heavy commands to prevent DB hammering.
   const wait = checkCooldown(interaction.user.id, interaction.commandName);
   if (wait > 0) {
-    return interaction.reply({
+    await interaction.reply({
       content: `Slow down — try again in ${(wait / 1000).toFixed(1)}s.`,
       flags: MessageFlags.Ephemeral,
     });
+    setTimeout(() => interaction.deleteReply().catch(() => {}), 5000);
+    return;
   }
 
   try {

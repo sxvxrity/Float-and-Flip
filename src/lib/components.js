@@ -65,7 +65,18 @@ export function playRow() {
   );
 }
 
-// A per-item Sell button, used next to inventory entries.
+// Embeds the owner's userId in the footer so the button handler can reject
+// clicks from other users. Format: "uid:USERID · friendly hint"
+export function ownedFooter(userId, text = '') {
+  return { text: `uid:${userId}${text ? ` · ${text}` : ''}` };
+}
+
+// Extracts the owner userId from a footer, or null if not present.
+export function footerOwner(interaction) {
+  const footer = interaction.message?.embeds?.[0]?.footer?.text ?? '';
+  const m = footer.match(/^uid:(\d+)/);
+  return m ? m[1] : null;
+}
 export function sellButton(itemId) {
   return b(`sell:${itemId}`, 'Sell', ButtonStyle.Danger, '💸');
 }

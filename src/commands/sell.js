@@ -1,3 +1,4 @@
+import { autoEphemeral } from '../lib/ephemeral.js';
 import { SlashCommandBuilder, MessageFlags } from 'discord.js';
 import { pool, getOrCreateUser } from '../lib/db.js';
 import { skinValue } from '../lib/skins.js';
@@ -32,10 +33,7 @@ export async function execute(interaction) {
 
     if (!item) {
       await client.query('ROLLBACK');
-      return interaction.reply({
-        content: `No skin with ID #${id} in your inventory.`,
-        flags: MessageFlags.Ephemeral,
-      });
+      return autoEphemeral(interaction, `No skin with ID #${id} in your inventory.`);
     }
 
     // Compute value LIVE from the skin's properties and current rates —

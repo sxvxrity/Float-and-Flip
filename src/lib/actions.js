@@ -8,7 +8,7 @@ import { pool, getOrCreateUser } from './db.js';
 import { rollSkin, skinValue, valueSqlExpression } from './skins.js';
 import { calcPassive, COINS_PER_BOT_PER_HOUR } from './passive.js';
 import { RARITY_EMOJI, wearBar, color } from './visuals.js';
-import { navRow, earnRow, playRow, row, sellButton, buyButton, marketNav, Btn } from './components.js';
+import { navRow, earnRow, playRow, row, sellButton, buyButton, marketNav, Btn, ownedFooter } from './components.js';
 import {
   UPGRADES, level, caseCostMult, floatScannerLevel, rareHunterBoost, dailyBonus,
 } from './upgrades.js';
@@ -45,7 +45,7 @@ export async function hubScreen(userId) {
       `🤖 **${user.trade_bots}** trade bot(s)` +
       (earned > 0 ? ` · **${earned.toLocaleString()}** ready to collect` : '')
     )
-    .setFooter({ text: 'Open cases, collect income, climb the leaderboard' });
+    .setFooter(ownedFooter(userId, 'Open cases, collect income, climb the leaderboard'));
 
   // Show the priciest skin with its thumbnail, if they own any.
   if (topItem) {
@@ -130,9 +130,13 @@ export async function claimDaily(userId) {
     const h = Math.floor(rem / 3_600_000), m = Math.floor((rem % 3_600_000) / 60_000);
     return { error: `Already claimed. Come back in ${h}h ${m}m.` };
   }
-  const embed = new EmbedBuilder().setColor(0xf1c40f).setTitle('Daily claimed')
-    .setDescription(`💰 **+${total.toLocaleString()}** coins\nCome back in 20 hours.`);
-  return { payload: { embeds: [embed], components: [earnRow(), navRow()] } };
+  // Return a refreshed hub so the balance updates immediately in the message.
+  const hub = await hubScreen(userId);
+  hub.embeds[0].data.fields = [
+    { name: '✅ Daily claimed', value: `💰 **+${total.toLocaleString()}** coins · come back in 20 hours`, inline: false },
+    ...(hub.embeds[0].data.fields ?? []),
+  ];
+  return { payload: hub };
 }
 
 // ── COLLECT (invest) ────────────────────────────────────────────────
@@ -148,11 +152,15 @@ export async function collectIncome(userId) {
     [earned, userId, new Date(user.last_passive).toISOString()]);
   if (res.rowCount === 0) return { error: 'Those earnings were just collected.' };
 
-  const rate = user.trade_bots * COINS_PER_BOT_PER_HOUR;
-  const embed = new EmbedBuilder().setColor(0x2ecc71).setTitle('Trade bots collected')
-    .setDescription(`🤖 **${user.trade_bots}** bot(s) · **${hours.toFixed(1)}h**\n` +
-      `Earned **+${earned.toLocaleString()}** coins\nRate: ${rate.toLocaleString()}/hour`);
-  return { payload: { embeds: [embed], components: [earnRow(), navRow()] } };
+  // Return the refreshed hub screen so the "X ready to collect" clears
+  // immediately — avoids the stale message staying in the channel.
+  const hub = await hubScreen(userId);
+  // Prepend a small confirmation field to the hub embed so they see what they earned.
+  hub.embeds[0].data.fields = [
+    { name: '✅ Collected', value: `🤖 **+${earned.toLocaleString()}** coins from ${user.trade_bots} bot(s) over ${hours.toFixed(1)}h`, inline: false },
+    ...(hub.embeds[0].data.fields ?? []),
+  ];
+  return { payload: hub };
 }
 
 // ── INVENTORY ───────────────────────────────────────────────────────
@@ -177,20 +185,21 @@ export async function inventoryScreen(userId) {
   if (priced.length === 0) {
     embed.addFields({ name: 'Empty', value: 'Open a case to get started.' });
   } else {
-    // Top 5 each get a labelled Sell button (one button per row so the
-    // label can name the skin — Discord allows max 5 rows per message).
-    const top = priced.slice(0, 5);
+    const top = priced.slice(0, 4); // 4 instead of 5 — saves room for Sell All button
     embed.setDescription(embed.data.description + '\n\n' + top.map((r) => {
       const e = RARITY_EMOJI[r.rarity] ?? '▫️';
       const name = r.name.length > 32 ? r.name.slice(0, 29) + '…' : r.name;
       return `${e} \`#${r.id}\` ${r.stattrak ? 'ST™ ' : ''}**${name}** \`${wearBar(r.wear)}\` — ${r.live.toLocaleString()}`;
-    }).join('\n') + (priced.length > 5 ? `\n*…and ${priced.length - 5} more (use /sell for those)*` : ''));
+    }).join('\n') + (priced.length > 4 ? `\n*…and ${priced.length - 4} more*` : ''));
 
-    // One row of up to 5 sell buttons, labelled by item id.
-    const sellRow = row(...top.map((r) => sellButton(r.id).setLabel(`Sell #${r.id}`)));
+    const sellRow = row(
+      ...top.map((r) => sellButton(r.id).setLabel(`Sell #${r.id}`)),
+      Btn.b('sell:all', 'Sell All', ButtonStyle.Danger, '💸'),
+    );
     components.push(sellRow);
   }
   components.push(navRow('inventory'));
+  embed.setFooter(ownedFooter(userId));
   return { embeds: [embed], components };
 }
 
@@ -219,6 +228,33 @@ export async function sellItem(userId, itemId) {
     `for **${sold.market.toLocaleString()}** (−${sold.fee.toLocaleString()} fee) → **+${sold.payout.toLocaleString()}** coins.` };
 }
 
+// ── SELL ALL items ───────────────────────────────────────────────────
+// Atomically sells every skin in the user's inventory in one transaction.
+export async function sellAll(userId) {
+  const user = await getOrCreateUser(userId);
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query(
+      'DELETE FROM inventory WHERE user_id = $1 RETURNING *', [userId]);
+    if (rows.length === 0) {
+      await client.query('ROLLBACK');
+      return { error: 'Your inventory is already empty.' };
+    }
+    let totalPayout = 0;
+    for (const item of rows) {
+      const live = skinValue({ rarity: item.rarity, wear: item.wear, stattrak: item.stattrak });
+      const market = Math.round(live * (0.85 + Math.random() * 0.3));
+      const fee = Math.round(market * (user.sell_fee / 100));
+      totalPayout += market - fee;
+    }
+    await client.query('UPDATE users SET coins = coins + $1 WHERE user_id = $2', [totalPayout, userId]);
+    await client.query('COMMIT');
+    return { count: rows.length, totalPayout };
+  } catch (e) { await client.query('ROLLBACK'); throw e; }
+  finally { client.release(); }
+}
+
 // ── MARKET browse ───────────────────────────────────────────────────
 export async function marketScreen(userId, page = 1) {
   await getOrCreateUser(userId);
@@ -240,7 +276,7 @@ export async function marketScreen(userId, page = 1) {
       const e = RARITY_EMOJI[r.rarity] ?? '▫️';
       const name = r.name.length > 32 ? r.name.slice(0, 29) + '…' : r.name;
       return `${e} \`#${r.listing_id}\` ${r.stattrak ? 'ST™ ' : ''}**${name}** \`${wearBar(r.wear)}\` — **${Number(r.price).toLocaleString()}**`;
-    }).join('\n')).setFooter({ text: `Page ${page}/${totalPages} · ${total} listings` });
+    }).join('\n')).setFooter(ownedFooter(userId, `Page ${page}/${totalPages} · ${total} listings`));
     // A row of Buy buttons, labelled by listing id.
     components.push(row(...rows.map((r) => buyButton(r.listing_id).setLabel(`Buy #${r.listing_id}`))));
   }
@@ -312,6 +348,7 @@ export async function upgradeScreen(userId) {
   const catRow1 = row(...catKeys.slice(0, 3).map(mkBtn));
   const catRow2 = row(...catKeys.slice(3, 6).map(mkBtn));
 
+  embed.setFooter(ownedFooter(userId));
   return { embeds: [embed], components: [coreRow, catRow1, catRow2, navRow('upgrade')] };
 }
 
@@ -417,6 +454,7 @@ export async function myListingsScreen(userId) {
       b(`market:unlist:${r.listing_id}`, `Unlist #${r.listing_id}`, ButtonStyle.Danger, '↩️'))));
   }
   components.push(navRow('market'));
+  embed.setFooter(ownedFooter(userId));
   return { embeds: [embed], components };
 }
 
@@ -472,6 +510,7 @@ export async function leaderboardScreen(client, userId, sort = 'inventory') {
     b('lb:inventory', 'By Value', sort === 'inventory' ? ButtonStyle.Success : ButtonStyle.Secondary, '💎'),
     b('lb:coins', 'By Coins', sort === 'coins' ? ButtonStyle.Success : ButtonStyle.Secondary, '💰'),
   );
+  embed.setFooter(ownedFooter(userId));
   return { embeds: [embed], components: [toggleRow, navRow()] };
 }
 

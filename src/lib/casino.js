@@ -6,7 +6,7 @@ import { EmbedBuilder, ButtonStyle } from 'discord.js';
 import { rnd, weighted, chance, shuffledDeck } from './fairrng.js';
 import { placeBet, settle } from './betting.js';
 import { getOrCreateUser } from './db.js';
-import { row, navRow, Btn } from './components.js';
+import { row, navRow, ownedFooter, Btn } from './components.js';
 
 const b = Btn.b;
 
@@ -19,7 +19,7 @@ export async function casinoScreen(userId) {
       `💰 **${user.coins.toLocaleString()}** coins\n\n` +
       'Pick a game below, then choose your bet.\n\n' +
       '*All games are provably fair with a small house edge.*')
-    .setFooter({ text: 'Gamble responsibly — it\'s just coins, but still.' });
+    .setFooter(ownedFooter(userId, 'Gamble responsibly — it\'s just coins, but still.'));
 
   const gameRow = row(
     b('cas:slots', 'Slots', ButtonStyle.Primary, '🎰'),

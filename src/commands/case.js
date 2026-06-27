@@ -1,3 +1,4 @@
+import { autoEphemeral } from '../lib/ephemeral.js';
 import { SlashCommandBuilder } from 'discord.js';
 import { openCase } from '../lib/actions.js';
 import { getOrCreateUser } from '../lib/db.js';
@@ -11,7 +12,7 @@ export async function execute(interaction) {
   const user = await getOrCreateUser(interaction.user.id);
   const res = await openCase(interaction.user.id);
   if (res.error) {
-    return interaction.reply({ content: res.error, ephemeral: true });
+    return autoEphemeral(interaction, res.error);
   }
   // openCase returns { drop, isRare, payload }. Animate the reveal unless fast.
   if (!user.fast_mode) {

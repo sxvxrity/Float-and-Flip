@@ -1,3 +1,4 @@
+import { autoEphemeral } from '../lib/ephemeral.js';
 import { SlashCommandBuilder, MessageFlags } from 'discord.js';
 import { pool, getOrCreateUser } from '../lib/db.js';
 
@@ -20,11 +21,9 @@ export async function execute(interaction) {
       'UPDATE users SET fast_mode = $1 WHERE user_id = $2',
       [enabled, user.user_id]
     );
-    return interaction.reply({
-      content: enabled
+    return autoEphemeral(interaction,
+      enabled
         ? '⚡ Fast mode **on** — `/case` now skips the reveal animation.'
-        : '🎁 Fast mode **off** — case openings will play the full reveal.',
-      flags: MessageFlags.Ephemeral,
-    });
+        : '🎁 Fast mode **off** — case openings will play the full reveal.');
   }
 }

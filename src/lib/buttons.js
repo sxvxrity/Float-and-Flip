@@ -5,7 +5,7 @@
 
 import {
   hubScreen, openCase, claimDaily, collectIncome,
-  inventoryScreen, sellItem, marketScreen, buyListing,
+  inventoryScreen, sellItem, sellAll, marketScreen, buyListing,
   upgradeScreen, buyUpgrade, unlistListing, myListingsScreen,
   leaderboardScreen,
 } from './actions.js';
@@ -17,6 +17,7 @@ import {
 import { playMatch } from './match.js';
 import { getOrCreateUser } from './db.js';
 import { ephemeralReply, ephemeralFollowUp } from './ephemeral.js';
+import { footerOwner } from './components.js';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const FRAME_MS = 800;
@@ -48,6 +49,13 @@ async function playResult(interaction, userId, result) {
 export async function handleButton(interaction) {
   const [ns, action, arg] = interaction.customId.split(':');
   const userId = interaction.user.id;
+
+  // Ownership check: every screen embeds its owner's ID in the footer.
+  // If someone else clicks the buttons, reject politely.
+  const owner = footerOwner(interaction);
+  if (owner && owner !== userId) {
+    return ephemeralReply(interaction, '❌ These buttons aren\'t yours — use `/hub` to open your own.');
+  }
 
   // ── Navigation: replace the current screen in place ──
   if (ns === 'nav') {
@@ -91,6 +99,15 @@ export async function handleButton(interaction) {
     const res = await collectIncome(userId);
     if (res.error) return ephemeralReply(interaction, res.error);
     return interaction.update(res.payload);
+  }
+
+  // ── Sell all items ──
+  if (ns === 'sell' && action === 'all') {
+    const res = await sellAll(userId);
+    if (res.error) return ephemeralReply(interaction, res.error);
+    const screen = await inventoryScreen(userId);
+    await interaction.update(screen);
+    return ephemeralFollowUp(interaction, `💸 Sold **${res.count}** skin(s) for **+${res.totalPayout.toLocaleString()}** coins total.`);
   }
 
   // ── Sell an item: refresh the inventory screen, confirm privately ──

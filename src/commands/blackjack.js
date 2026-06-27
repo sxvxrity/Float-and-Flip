@@ -1,3 +1,4 @@
+import { autoEphemeral } from '../lib/ephemeral.js';
 import { SlashCommandBuilder, MessageFlags } from 'discord.js';
 import { startBlackjack } from '../lib/casino.js';
 import { MIN_BET, MAX_BET } from '../lib/betting.js';
@@ -12,6 +13,6 @@ export const data = new SlashCommandBuilder()
 export async function execute(interaction) {
   const bet = interaction.options.getInteger('bet');
   const res = await startBlackjack(interaction.user.id, bet);
-  if (res.error) return interaction.reply({ content: res.error, flags: MessageFlags.Ephemeral });
+  if (res.error) return autoEphemeral(interaction, res.error);
   await interaction.reply(res.payload);
 }

@@ -1,3 +1,4 @@
+import { autoEphemeral } from '../lib/ephemeral.js';
 import { SlashCommandBuilder, EmbedBuilder, MessageFlags } from 'discord.js';
 import { pool, getOrCreateUser } from '../lib/db.js';
 import { RARITY_ORDER, WEARS, loadSkins, skinValue } from '../lib/skins.js';
@@ -22,7 +23,7 @@ export async function execute(interaction) {
   const tierIdx = RARITY_ORDER.indexOf(rarity);
   const nextTier = RARITY_ORDER[tierIdx + 1];
   if (!nextTier) {
-    return interaction.reply({ content: `${rarity} is the top tier — can't trade up.`, flags: MessageFlags.Ephemeral });
+    return autoEphemeral(interaction, `${rarity} is the top tier — can't trade up.`);
   }
 
   // Grab the 10 cheapest of that rarity to consume.
@@ -33,10 +34,7 @@ export async function execute(interaction) {
   );
 
   if (pool10.length < NEEDED) {
-    return interaction.reply({
-      content: `You need ${NEEDED} **${rarity}** skins to trade up. You have ${pool10.length}.`,
-      flags: MessageFlags.Ephemeral,
-    });
+    return autoEphemeral(interaction, `You need ${NEEDED} **${rarity}** skins to trade up. You have ${pool10.length}.`);
   }
 
   await interaction.deferReply();
