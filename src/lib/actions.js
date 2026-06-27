@@ -132,10 +132,8 @@ export async function claimDaily(userId) {
   }
   // Return a refreshed hub so the balance updates immediately in the message.
   const hub = await hubScreen(userId);
-  hub.embeds[0].data.fields = [
-    { name: '✅ Daily claimed', value: `💰 **+${total.toLocaleString()}** coins · come back in 20 hours`, inline: false },
-    ...(hub.embeds[0].data.fields ?? []),
-  ];
+  const confirmField = { name: '✅ Daily claimed', value: `💰 **+${total.toLocaleString()}** coins · come back in 20 hours`, inline: false };
+  hub.embeds[0] = EmbedBuilder.from(hub.embeds[0]).spliceFields(0, 0, confirmField);
   return { payload: hub };
 }
 
@@ -155,11 +153,10 @@ export async function collectIncome(userId) {
   // Return the refreshed hub screen so the "X ready to collect" clears
   // immediately — avoids the stale message staying in the channel.
   const hub = await hubScreen(userId);
-  // Prepend a small confirmation field to the hub embed so they see what they earned.
-  hub.embeds[0].data.fields = [
-    { name: '✅ Collected', value: `🤖 **+${earned.toLocaleString()}** coins from ${user.trade_bots} bot(s) over ${hours.toFixed(1)}h`, inline: false },
-    ...(hub.embeds[0].data.fields ?? []),
-  ];
+  // Add a confirmation field using the proper API so the mutation sticks.
+  const confirmField = { name: '✅ Collected', value: `🤖 **+${earned.toLocaleString()}** coins from ${user.trade_bots} bot(s) over ${hours.toFixed(1)}h`, inline: false };
+  const existing = hub.embeds[0].data.fields ?? [];
+  hub.embeds[0] = EmbedBuilder.from(hub.embeds[0]).spliceFields(0, 0, confirmField);
   return { payload: hub };
 }
 
