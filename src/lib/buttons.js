@@ -98,7 +98,9 @@ export async function handleButton(interaction) {
   if (ns === 'invest' && action === 'collect') {
     const res = await collectIncome(userId);
     if (res.error) return ephemeralReply(interaction, res.error);
-    return interaction.update(res.payload);
+    await interaction.update(res.payload);
+    await ephemeralFollowUp(interaction, `✅ Collected! Hub updated — if it still shows pending income, try clicking Hub to refresh.`);
+    return;
   }
 
   // ── Sell all items ──
