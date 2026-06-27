@@ -17,8 +17,7 @@ export async function casinoScreen(userId) {
     .setTitle('🎰 The Casino')
     .setDescription(
       `💰 **${user.coins.toLocaleString()}** coins\n\n` +
-      'Pick a game below, then choose your bet.\n\n' +
-      '*All games are provably fair with a small house edge.*')
+      'Pick a game below, then choose your bet.')
     .setFooter(ownedFooter(userId, 'Gamble responsibly — it\'s just coins, but still.'));
 
   const gameRow = row(
