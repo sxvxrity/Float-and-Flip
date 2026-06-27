@@ -91,15 +91,19 @@ export async function handleButton(interaction) {
   if (ns === 'daily' && action === 'claim') {
     const res = await claimDaily(userId);
     if (res.error) return ephemeralReply(interaction, res.error);
-    return interaction.update(res.payload);
+    await interaction.deferUpdate();
+    await interaction.message.edit(res.payload);
+    return;
   }
 
   // ── Collect passive income ──
   if (ns === 'invest' && action === 'collect') {
     const res = await collectIncome(userId);
     if (res.error) return ephemeralReply(interaction, res.error);
-    await interaction.update(res.payload);
-    await ephemeralFollowUp(interaction, `✅ Collected! Hub updated — if it still shows pending income, try clicking Hub to refresh.`);
+    // Use message.edit directly — more reliable than interaction.update()
+    // for messages that may have been sent a while ago.
+    await interaction.deferUpdate();
+    await interaction.message.edit(res.payload);
     return;
   }
 

@@ -65,16 +65,18 @@ export function playRow() {
   );
 }
 
-// Embeds the owner's userId in the footer so the button handler can reject
-// clicks from other users. Format: "uid:USERID · friendly hint"
-export function ownedFooter(userId, text = '') {
-  return { text: `uid:${userId}${text ? ` · ${text}` : ''}` };
+// Embeds the owner's userId invisibly in the footer iconURL (not visible text).
+// The friendly hint text is all the user sees.
+export function ownedFooter(userId, text = 'Float & Flip') {
+  // We encode the userId as a fake CDN URL — Discord ignores invalid icon URLs
+  // gracefully (shows no icon) but we can still read it back from the embed.
+  return { text, iconURL: `https://cdn.discordapp.com/uid/${userId}/owner.png` };
 }
 
-// Extracts the owner userId from a footer, or null if not present.
+// Extracts the owner userId from the footer iconURL, or null if not present.
 export function footerOwner(interaction) {
-  const footer = interaction.message?.embeds?.[0]?.footer?.text ?? '';
-  const m = footer.match(/^uid:(\d+)/);
+  const iconURL = interaction.message?.embeds?.[0]?.footer?.iconURL ?? '';
+  const m = iconURL.match(/\/uid\/(\d+)\/owner\.png$/);
   return m ? m[1] : null;
 }
 export function sellButton(itemId) {
