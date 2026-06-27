@@ -21,11 +21,13 @@ const MARKET_FEE = 5;
 
 // ── HUB ─────────────────────────────────────────────────────────────
 // The main hub screen: balance, bots, top item, and the action bar.
-export async function hubScreen(userId) {
+// Pass `overrideEarned` to force the "ready to collect" display to a known
+// value (e.g. 0 immediately after collecting, so it clears right away).
+export async function hubScreen(userId, { overrideEarned } = {}) {
   const user = await getOrCreateUser(userId);
   const { rows: [{ count }] } = await pool.query(
     'SELECT COUNT(*) FROM inventory WHERE user_id = $1', [userId]);
-  const { earned } = calcPassive(user);
+  const earned = overrideEarned !== undefined ? overrideEarned : calcPassive(user).earned;
 
   // Find the most valuable skin (computed live from current rates).
   const { rows: items } = await pool.query(
@@ -151,11 +153,9 @@ export async function collectIncome(userId) {
   if (res.rowCount === 0) return { error: 'Those earnings were just collected.' };
 
   // Return the refreshed hub screen so the "X ready to collect" clears
-  // immediately — avoids the stale message staying in the channel.
-  const hub = await hubScreen(userId);
-  // Add a confirmation field using the proper API so the mutation sticks.
+  // immediately — overrideEarned:0 forces the display to show nothing pending.
   const confirmField = { name: '✅ Collected', value: `🤖 **+${earned.toLocaleString()}** coins from ${user.trade_bots} bot(s) over ${hours.toFixed(1)}h`, inline: false };
-  const existing = hub.embeds[0].data.fields ?? [];
+  const hub = await hubScreen(userId, { overrideEarned: 0 });
   hub.embeds[0] = EmbedBuilder.from(hub.embeds[0]).spliceFields(0, 0, confirmField);
   return { payload: hub };
 }
