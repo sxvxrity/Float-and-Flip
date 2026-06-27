@@ -133,19 +133,27 @@ export async function claimDaily(userId) {
 
 // ── COLLECT (invest) ────────────────────────────────────────────────
 export async function collectIncome(userId) {
-  const user = await getOrCreateUser(userId);
-  if (user.trade_bots <= 0) return { error: 'No trade bots yet. Buy one with `/upgrade tradebot`.' };
-  const { earned, hours } = calcPassive(user);
-  if (earned <= 0) return { error: 'Nothing to collect yet — check back soon.' };
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    // Lock the row so concurrent collects can't race.
+    const { rows: [user] } = await client.query(
+      'SELECT * FROM users WHERE user_id = $1 FOR UPDATE', [userId]);
+    if (!user) { await client.query('ROLLBACK'); return { error: 'User not found.' }; }
+    if (user.trade_bots <= 0) { await client.query('ROLLBACK'); return { error: 'No trade bots yet. Buy one with `/upgrade tradebot`.' }; }
 
-  const res = await pool.query(
-    `UPDATE users SET coins = coins + $1, last_passive = NOW()
-     WHERE user_id = $2 AND last_passive = $3`,
-    [earned, userId, new Date(user.last_passive).toISOString()]);
-  if (res.rowCount === 0) return { error: 'Those earnings were just collected.' };
+    const { earned, hours } = calcPassive(user);
+    if (earned <= 0) { await client.query('ROLLBACK'); return { error: 'Nothing to collect yet — check back soon.' }; }
 
-  const confirmField = `✅ Collected **+${earned.toLocaleString()}** coins from ${user.trade_bots} bot(s) over ${hours.toFixed(1)}h`;
-  return { payload: await hubScreen(userId, { overrideEarned: 0, confirmText: confirmField }) };
+    await client.query(
+      'UPDATE users SET coins = coins + $1, last_passive = NOW() WHERE user_id = $2',
+      [earned, userId]);
+    await client.query('COMMIT');
+
+    const confirmText = `✅ Collected **+${earned.toLocaleString()}** coins from ${user.trade_bots} bot(s) over ${hours.toFixed(1)}h`;
+    return { payload: await hubScreen(userId, { overrideEarned: 0, confirmText }) };
+  } catch (e) { await client.query('ROLLBACK'); throw e; }
+  finally { client.release(); }
 }
 
 // ── INVENTORY ───────────────────────────────────────────────────────

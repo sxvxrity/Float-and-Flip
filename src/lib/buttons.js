@@ -91,20 +91,14 @@ export async function handleButton(interaction) {
   if (ns === 'daily' && action === 'claim') {
     const res = await claimDaily(userId);
     if (res.error) return ephemeralReply(interaction, res.error);
-    await interaction.deferUpdate();
-    await interaction.message.edit(res.payload);
-    return;
+    return interaction.update(res.payload);
   }
 
   // ── Collect passive income ──
   if (ns === 'invest' && action === 'collect') {
     const res = await collectIncome(userId);
     if (res.error) return ephemeralReply(interaction, res.error);
-    // Use message.edit directly — more reliable than interaction.update()
-    // for messages that may have been sent a while ago.
-    await interaction.deferUpdate();
-    await interaction.message.edit(res.payload);
-    return;
+    return interaction.update(res.payload);
   }
 
   // ── Sell all items ──
