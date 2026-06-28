@@ -70,7 +70,7 @@ export async function execute(interaction) {
           `UPDATE users SET
              coins = 1000, storage_cap = 50, sell_fee = 15,
              trade_bots = 0, upgrades = '{}', fast_mode = FALSE,
-             last_passive = NOW(), last_daily = NULL, last_match = NULL
+             last_passive = NOW(), last_daily = NULL, last_match = NULL, last_gift = NULL
            WHERE user_id = $1`, [target.id]);
         await client.query('COMMIT');
       } catch (e) { await client.query('ROLLBACK'); throw e; }
@@ -100,7 +100,7 @@ export async function execute(interaction) {
         `UPDATE users SET
            coins = 1000, storage_cap = 50, sell_fee = 15,
            trade_bots = 0, upgrades = '{}', fast_mode = FALSE,
-           last_passive = NOW(), last_daily = NULL, last_match = NULL`);
+           last_passive = NOW(), last_daily = NULL, last_match = NULL, last_gift = NULL`);
       await client.query('COMMIT');
     } catch (e) { await client.query('ROLLBACK'); throw e; }
     finally { client.release(); }

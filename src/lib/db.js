@@ -25,6 +25,7 @@ export async function initDb() {
       last_passive TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       last_daily   TIMESTAMPTZ,
       last_match   TIMESTAMPTZ,
+      last_gift    TIMESTAMPTZ,
       created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
 
@@ -69,6 +70,7 @@ export async function initDb() {
     ALTER TABLE market_listings ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ NOT NULL DEFAULT NOW() + INTERVAL '24 hours';
     ALTER TABLE market_listings ADD COLUMN IF NOT EXISTS base_value BIGINT NOT NULL DEFAULT 0;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS last_match TIMESTAMPTZ;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS last_gift TIMESTAMPTZ;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS upgrades JSONB NOT NULL DEFAULT '{}'::jsonb;
   `);
 }

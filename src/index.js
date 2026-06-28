@@ -6,6 +6,7 @@ import 'dotenv/config';
 import { initDb } from './lib/db.js';
 import { loadSkins } from './lib/skins.js';
 import { startMarketSweeper } from './lib/sweeper.js';
+import { startBotMarket } from './lib/botmarket.js';
 import { checkCooldown } from './lib/cooldown.js';
 import { handleButton } from './lib/buttons.js';
 
@@ -88,6 +89,7 @@ client.on('interactionCreate', async (interaction) => {
 // the data is available.
 await initDb();
 startMarketSweeper();
+startBotMarket();
 
 async function warmSkins(attempt = 1) {
   try {

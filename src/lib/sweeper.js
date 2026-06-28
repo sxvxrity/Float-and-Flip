@@ -23,6 +23,11 @@ async function sweepOnce() {
     );
 
     for (const lst of rows) {
+      // Bot listings: just delete, no payout (coins go nowhere = coin sink).
+      if (lst.seller_id === 'bot_market_system') {
+        await client.query('DELETE FROM market_listings WHERE listing_id = $1', [lst.listing_id]);
+        continue;
+      }
       // Pay on the skin's INTRINSIC value, not the asking price — otherwise a
       // seller could list a cheap skin at an absurd price and farm the system.
       // Also cap at the asking price so the floor never beats what they asked.

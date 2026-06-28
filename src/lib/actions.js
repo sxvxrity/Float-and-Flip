@@ -59,7 +59,28 @@ export async function hubScreen(userId, { overrideEarned, confirmText } = {}) {
   return { embeds: [embed], components: [earnRow(), playRow(), navRow('shack')] };
 }
 
-// ── OPEN CASE ───────────────────────────────────────────────────────
+// ── CASE QUANTITY PICKER ─────────────────────────────────────────────
+// Shown when the user clicks Open Case — lets them pick 1/3/5/10.
+export async function casePicker(userId) {
+  const user = await getOrCreateUser(userId);
+  const cost = Math.round(CASE_COST * caseCostMult(user.upgrades));
+  const embed = new EmbedBuilder().setColor(0x4b69ff)
+    .setTitle('📦 Open Cases')
+    .setDescription(
+      `💰 **${user.coins.toLocaleString()}** coins\n` +
+      `📦 Each case costs **${cost.toLocaleString()}** coins\n\n` +
+      `How many do you want to open?`)
+    .setFooter(ownedFooter(userId));
+  const qtyRow = row(
+    b('case:open:1',  '× 1',  ButtonStyle.Primary),
+    b('case:open:3',  '× 3',  ButtonStyle.Primary),
+    b('case:open:5',  '× 5',  ButtonStyle.Primary),
+    b('case:open:10', '× 10', ButtonStyle.Primary),
+  );
+  return { embeds: [embed], components: [qtyRow, navRow()] };
+}
+
+// ── OPEN CASE (single) ───────────────────────────────────────────────
 // Returns { result, animate } — animate is true when the caller should play
 // the reveal (slash command does; buttons jump straight to result for speed).
 export async function openCase(userId) {
@@ -106,6 +127,84 @@ export async function openCase(userId) {
   const isRare = ['Covert', 'Extraordinary'].includes(drop.rarity);
   return {
     drop, isRare,
+    payload: { embeds: [embed], components: [earnRow(), navRow()] },
+  };
+}
+
+// ── OPEN CASE MULTI ──────────────────────────────────────────────────
+// Opens qty cases in one go, returns a summary embed of all drops.
+export async function openCaseMulti(userId, qty) {
+  const user = await getOrCreateUser(userId);
+  const costPer = Math.round(CASE_COST * caseCostMult(user.upgrades));
+  const totalCost = costPer * qty;
+
+  if (user.coins < totalCost) {
+    return { error: `You need **${totalCost.toLocaleString()}** coins for ×${qty} cases. You have **${user.coins.toLocaleString()}**.` };
+  }
+
+  const client = await pool.connect();
+  const drops = [];
+  let rareDrops = [];
+  let skipped = 0;
+
+  try {
+    await client.query('BEGIN');
+
+    // Deduct total cost atomically upfront.
+    const pay = await client.query(
+      'UPDATE users SET coins = coins - $1 WHERE user_id = $2 AND coins >= $1',
+      [totalCost, userId]);
+    if (pay.rowCount === 0) { await client.query('ROLLBACK'); return { error: `You no longer have ${totalCost.toLocaleString()} coins.` }; }
+
+    // Roll each skin and insert — skip if storage full.
+    for (let i = 0; i < qty; i++) {
+      const drop = await rollSkin(rareHunterBoost(user.upgrades), floatScannerLevel(user.upgrades));
+      const ins = await client.query(
+        `INSERT INTO inventory (user_id, skin_id, name, rarity, wear, stattrak, value, image)
+         SELECT $1,$2,$3,$4,$5,$6,$7,$8
+         WHERE (SELECT COUNT(*) FROM inventory WHERE user_id = $1) < $9`,
+        [userId, drop.skin_id, drop.name, drop.rarity, drop.wear, drop.stattrak, drop.value, drop.image, user.storage_cap]);
+      if (ins.rowCount === 0) { skipped++; } else { drops.push(drop); }
+      if (['Covert', 'Extraordinary'].includes(drop.rarity)) rareDrops.push(drop);
+    }
+
+    // Refund the cost of any skipped cases — player shouldn't pay for cases
+    // they couldn't receive due to full storage.
+    if (skipped > 0) {
+      const refund = costPer * skipped;
+      await client.query('UPDATE users SET coins = coins + $1 WHERE user_id = $2', [refund, userId]);
+    }
+
+    await client.query('COMMIT');
+  } catch (e) { await client.query('ROLLBACK'); throw e; }
+  finally { client.release(); }
+
+  if (drops.length === 0) return { error: `Storage full — sell some skins first.` };
+
+  // Build summary embed.
+  const totalValue = drops.reduce((s, d) => s + d.value, 0);
+  const best = drops.reduce((a, b) => a.value > b.value ? a : b);
+  const bestEmoji = RARITY_EMOJI[best.rarity] ?? '▫️';
+
+  const lines = drops.map((d) => {
+    const e = RARITY_EMOJI[d.rarity] ?? '▫️';
+    return `${e} ${d.stattrak ? 'ST™ ' : ''}**${d.name}** — ${d.value.toLocaleString()}`;
+  });
+
+  const embed = new EmbedBuilder().setColor(color(best.rarity))
+    .setTitle(`📦 Opened ×${drops.length} Case${drops.length > 1 ? 's' : ''}`)
+    .setDescription(lines.join('\n'))
+    .addFields(
+      { name: '💎 Best drop', value: `${bestEmoji} ${best.stattrak ? 'ST™ ' : ''}${best.name} (${best.value.toLocaleString()})`, inline: true },
+      { name: '💰 Total value', value: totalValue.toLocaleString(), inline: true },
+    )
+    .setThumbnail(best.image || null);
+
+  if (skipped > 0) embed.setFooter(ownedFooter(userId, `${skipped} skin(s) skipped — storage full`));
+  else embed.setFooter(ownedFooter(userId));
+
+  return {
+    rareDrops,
     payload: { embeds: [embed], components: [earnRow(), navRow()] },
   };
 }
@@ -268,8 +367,9 @@ export async function marketScreen(userId, page = 1) {
     embed.setDescription(rows.map((r) => {
       const e = RARITY_EMOJI[r.rarity] ?? '▫️';
       const name = r.name.length > 32 ? r.name.slice(0, 29) + '…' : r.name;
-      return `${e} \`#${r.listing_id}\` ${r.stattrak ? 'ST™ ' : ''}**${name}** \`${wearBar(r.wear)}\` — **${Number(r.price).toLocaleString()}**`;
-    }).join('\n')).setFooter(ownedFooter(userId, `Page ${page}/${totalPages} · ${total} listings`));
+      const seller = r.seller_id === 'bot_market_system' ? '🤖' : '👤';
+      return `${seller} ${e} \`#${r.listing_id}\` ${r.stattrak ? 'ST™ ' : ''}**${name}** \`${wearBar(r.wear)}\` — **${Number(r.price).toLocaleString()}**`;
+    }).join('\n')).setFooter(ownedFooter(userId, `Page ${page}/${totalPages} · ${total} listings · 🤖 = bot listing`));
     // A row of Buy buttons, labelled by listing id.
     components.push(row(...rows.map((r) => buyButton(r.listing_id).setLabel(`Buy #${r.listing_id}`))));
   }
@@ -469,6 +569,7 @@ export async function leaderboardScreen(client, userId, sort = 'inventory') {
              COALESCE(inv.total, 0) AS inv_value,
              RANK() OVER (ORDER BY ${metric} DESC) AS rank
       FROM users u LEFT JOIN inv ON inv.user_id = u.user_id
+      WHERE u.user_id != 'bot_market_system'
     )
     SELECT * FROM ranked ORDER BY rank ASC
   `);
@@ -528,7 +629,10 @@ export async function buyListing(userId, listingId) {
     const fee = Math.round(Number(lst.price) * (MARKET_FEE / 100));
     const payout = Number(lst.price) - fee;
     await client.query('UPDATE users SET coins = coins - $1 WHERE user_id = $2', [lst.price, userId]);
-    await client.query('UPDATE users SET coins = coins + $1 WHERE user_id = $2', [payout, lst.seller_id]);
+    // Bot listings: coins are removed from buyer but not credited anywhere = coin sink.
+    if (lst.seller_id !== 'bot_market_system') {
+      await client.query('UPDATE users SET coins = coins + $1 WHERE user_id = $2', [payout, lst.seller_id]);
+    }
     await client.query(
       `INSERT INTO inventory (user_id, skin_id, name, rarity, wear, stattrak, value, image)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,

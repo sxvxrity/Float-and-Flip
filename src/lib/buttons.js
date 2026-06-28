@@ -4,7 +4,7 @@
 // self-deleting ephemeral helpers so they vanish after ~30s.
 
 import {
-  hubScreen, openCase, claimDaily, collectIncome,
+  hubScreen, openCase, openCaseMulti, casePicker, claimDaily, collectIncome,
   inventoryScreen, sellItem, sellAll, marketScreen, buyListing,
   upgradeScreen, buyUpgrade, unlistListing, myListingsScreen,
   leaderboardScreen,
@@ -63,11 +63,32 @@ export async function handleButton(interaction) {
     return interaction.update(screen);
   }
 
-  // ── Open case: animate (unless fast mode), then show result ──
+  // ── Open case: no arg = show quantity picker; arg = qty to open ──
   if (ns === 'case' && action === 'open') {
+    // No quantity yet — show the picker.
+    if (!arg) {
+      const screen = await casePicker(userId);
+      return interaction.update(screen);
+    }
+
+    const qty = Number(arg);
+    const VALID_QTYS = [1, 3, 5, 10];
+    if (!VALID_QTYS.includes(qty)) return ephemeralReply(interaction, '❌ Invalid quantity.');
+
+    // Multi-open (3, 5, 10) — no animation, show summary.
+    if (qty > 1) {
+      const res = await openCaseMulti(userId, qty);
+      if (res.error) return ephemeralReply(interaction, res.error);
+      // Announce any rare drops publicly.
+      for (const rare of res.rareDrops ?? []) {
+        interaction.channel?.send(`🎉 ${interaction.user} just unboxed a **${rare.rarity}** from ×${qty} cases!`).catch(() => {});
+      }
+      return interaction.update(res.payload);
+    }
+
+    // Single open — animate as before.
     const res = await openCase(userId);
     if (res.error) return ephemeralReply(interaction, res.error);
-
     const user = await getOrCreateUser(userId);
     if (!user.fast_mode) {
       await interaction.update({
@@ -80,7 +101,6 @@ export async function handleButton(interaction) {
       }
       return interaction.editReply(res.payload);
     }
-    // Fast mode: still broadcast rare, but skip the reveal.
     if (res.isRare) {
       interaction.channel?.send(`🎉 ${interaction.user} just unboxed a **${res.drop.rarity}**!`).catch(() => {});
     }
