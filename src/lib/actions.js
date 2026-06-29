@@ -260,38 +260,53 @@ export async function collectIncome(userId) {
 export async function inventoryScreen(userId) {
   const user = await getOrCreateUser(userId);
   const { rows } = await pool.query(
-    'SELECT id, name, rarity, wear, stattrak FROM inventory WHERE user_id = $1', [userId]);
+    'SELECT id, name, rarity, wear, stattrak, locked FROM inventory WHERE user_id = $1', [userId]);
 
   const priced = rows
     .map((r) => ({ ...r, live: skinValue({ rarity: r.rarity, wear: r.wear, stattrak: r.stattrak }) }))
     .sort((a, b) => b.live - a.live);
   const total = priced.reduce((a, r) => a + r.live, 0);
+  const lockedCount = priced.filter((r) => r.locked).length;
 
   const embed = new EmbedBuilder().setColor(0x4b69ff)
     .setTitle('🎒 Your Inventory')
     .setDescription(
       `💰 **${user.coins.toLocaleString()}** coins · ` +
-      `📦 **${priced.length}/${user.storage_cap}** · total **${total.toLocaleString()}**`);
+      `📦 **${priced.length}/${user.storage_cap}** · total **${total.toLocaleString()}**` +
+      (lockedCount > 0 ? ` · 🔒 **${lockedCount}** locked` : ''));
 
   const components = [];
   if (priced.length === 0) {
     embed.addFields({ name: 'Empty', value: 'Open a case to get started.' });
   } else {
-    const top = priced.slice(0, 4); // 4 instead of 5 — saves room for Sell All button
+    // Show top 3 — saves room for Sell All + up to 2 lock buttons.
+    const top = priced.slice(0, 3);
     embed.setDescription(embed.data.description + '\n\n' + top.map((r) => {
       const e = RARITY_EMOJI[r.rarity] ?? '▫️';
-      const name = r.name.length > 32 ? r.name.slice(0, 29) + '…' : r.name;
-      return `${e} \`#${r.id}\` ${r.stattrak ? 'ST™ ' : ''}**${name}** \`${wearBar(r.wear)}\` — ${r.live.toLocaleString()}`;
-    }).join('\n') + (priced.length > 4 ? `\n*…and ${priced.length - 4} more*` : ''));
+      const name = r.name.length > 28 ? r.name.slice(0, 25) + '…' : r.name;
+      const lockIcon = r.locked ? '🔒 ' : '';
+      return `${lockIcon}${e} \`#${r.id}\` ${r.stattrak ? 'ST™ ' : ''}**${name}** \`${wearBar(r.wear)}\` — ${r.live.toLocaleString()}`;
+    }).join('\n') + (priced.length > 3 ? `\n*…and ${priced.length - 3} more*` : ''));
 
+    // Sell row: sell buttons for unlocked top items + Sell All.
     const sellRow = row(
-      ...top.map((r) => sellButton(r.id).setLabel(`Sell #${r.id}`)),
+      ...top.filter((r) => !r.locked).slice(0, 3).map((r) => sellButton(r.id).setLabel(`Sell #${r.id}`)),
       Btn.b('sell:all', 'Sell All', ButtonStyle.Danger, '💸'),
     );
     components.push(sellRow);
+
+    // Lock row: toggle lock on top items (up to 3).
+    const lockRow = row(
+      ...top.map((r) => Btn.b(
+        `lock:${r.id}`,
+        r.locked ? `🔓 #${r.id}` : `🔒 #${r.id}`,
+        r.locked ? ButtonStyle.Secondary : ButtonStyle.Primary,
+      )),
+    );
+    components.push(lockRow);
   }
   components.push(navRow('inventory'));
-  embed.setFooter(ownedFooter(userId));
+  embed.setFooter(ownedFooter(userId, '🔒 Lock a skin to protect it from Sell All'));
   return { embeds: [embed], components };
 }
 
@@ -303,9 +318,15 @@ export async function sellItem(userId, itemId) {
   try {
     await client.query('BEGIN');
     const { rows } = await client.query(
-      'DELETE FROM inventory WHERE id = $1 AND user_id = $2 RETURNING *', [itemId, userId]);
+      'DELETE FROM inventory WHERE id = $1 AND user_id = $2 AND locked = FALSE RETURNING *', [itemId, userId]);
     const item = rows[0];
-    if (!item) { await client.query('ROLLBACK'); return { error: `No skin #${itemId} in your inventory.` }; }
+    if (!item) {
+      await client.query('ROLLBACK');
+      const { rows: [check] } = await client.query(
+        'SELECT locked FROM inventory WHERE id = $1 AND user_id = $2', [itemId, userId]);
+      if (check?.locked) return { error: `🔒 Skin #${itemId} is locked. Unlock it first.` };
+      return { error: `No skin #${itemId} in your inventory.` };
+    }
     const live = skinValue({ rarity: item.rarity, wear: item.wear, stattrak: item.stattrak });
     const market = Math.round(live * (0.85 + Math.random() * 0.3));
     const fee = Math.round(market * (user.sell_fee / 100));
@@ -320,17 +341,28 @@ export async function sellItem(userId, itemId) {
     `for **${sold.market.toLocaleString()}** (−${sold.fee.toLocaleString()} fee) → **+${sold.payout.toLocaleString()}** coins.` };
 }
 
-// ── SELL ALL items ───────────────────────────────────────────────────
-// Atomically sells every skin in the user's inventory in one transaction.
+// ── TOGGLE LOCK ──────────────────────────────────────────────────────
+// Locks or unlocks a skin. Locked skins are skipped by Sell All.
+export async function toggleLock(userId, itemId) {
+  const { rows: [item] } = await pool.query(
+    'UPDATE inventory SET locked = NOT locked WHERE id = $1 AND user_id = $2 RETURNING *',
+    [itemId, userId]);
+  if (!item) return { error: 'Skin not found in your inventory.' };
+  return { locked: item.locked, name: item.name };
+}
+// Atomically sells every UNLOCKED skin. Locked skins are preserved as trophies.
 export async function sellAll(userId) {
   const user = await getOrCreateUser(userId);
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
     const { rows } = await client.query(
-      'DELETE FROM inventory WHERE user_id = $1 RETURNING *', [userId]);
+      'DELETE FROM inventory WHERE user_id = $1 AND locked = FALSE RETURNING *', [userId]);
     if (rows.length === 0) {
       await client.query('ROLLBACK');
+      const { rows: [{ count }] } = await client.query(
+        'SELECT COUNT(*) FROM inventory WHERE user_id = $1', [userId]);
+      if (Number(count) > 0) return { error: '🔒 All your skins are locked. Unlock them to sell.' };
       return { error: 'Your inventory is already empty.' };
     }
     let totalPayout = 0;

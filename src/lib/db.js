@@ -39,6 +39,7 @@ export async function initDb() {
       stattrak    BOOLEAN NOT NULL DEFAULT FALSE,
       value       BIGINT NOT NULL,             -- coin value at drop time
       image       TEXT,
+      locked      BOOLEAN NOT NULL DEFAULT FALSE, -- protected from Sell All
       acquired_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
 
@@ -72,6 +73,7 @@ export async function initDb() {
     ALTER TABLE users ADD COLUMN IF NOT EXISTS last_match TIMESTAMPTZ;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS last_gift TIMESTAMPTZ;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS upgrades JSONB NOT NULL DEFAULT '{}'::jsonb;
+    ALTER TABLE inventory ADD COLUMN IF NOT EXISTS locked BOOLEAN NOT NULL DEFAULT FALSE;
   `);
 }
 

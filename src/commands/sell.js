@@ -26,13 +26,17 @@ export async function execute(interaction) {
     // tells us its data. If two /sell calls race, only ONE deletes a row —
     // the other gets zero rows back and pays nothing. No double-sell.
     const { rows } = await client.query(
-      'DELETE FROM inventory WHERE id = $1 AND user_id = $2 RETURNING *',
+      'DELETE FROM inventory WHERE id = $1 AND user_id = $2 AND locked = FALSE RETURNING *',
       [id, user.user_id]
     );
     const item = rows[0];
 
     if (!item) {
       await client.query('ROLLBACK');
+      // Check if the skin exists but is locked.
+      const { rows: [locked] } = await client.query(
+        'SELECT locked FROM inventory WHERE id = $1 AND user_id = $2', [id, user.user_id]);
+      if (locked?.locked) return autoEphemeral(interaction, `🔒 Skin #${id} is locked. Use \`/lock ${id}\` to unlock it first.`);
       return autoEphemeral(interaction, `No skin with ID #${id} in your inventory.`);
     }
 

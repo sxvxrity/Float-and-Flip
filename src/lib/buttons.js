@@ -5,7 +5,7 @@
 
 import {
   hubScreen, openCase, openCaseMulti, casePicker, claimDaily, collectIncome,
-  inventoryScreen, sellItem, sellAll, marketScreen, buyListing,
+  inventoryScreen, sellItem, sellAll, toggleLock, marketScreen, buyListing,
   upgradeScreen, buyUpgrade, unlistListing, myListingsScreen,
   leaderboardScreen,
 } from './actions.js';
@@ -119,6 +119,18 @@ export async function handleButton(interaction) {
     const res = await collectIncome(userId);
     if (res.error) return ephemeralReply(interaction, res.error);
     return interaction.update(res.payload);
+  }
+
+  // ── Lock / unlock a skin ──
+  if (ns === 'lock') {
+    const id = Number(action);
+    const res = await toggleLock(userId, id);
+    if (res.error) return ephemeralReply(interaction, res.error);
+    const screen = await inventoryScreen(userId);
+    await interaction.update(screen);
+    return ephemeralFollowUp(interaction,
+      res.locked ? `🔒 **${res.name}** locked — it won't be sold by Sell All.`
+                 : `🔓 **${res.name}** unlocked.`);
   }
 
   // ── Sell all items ──
