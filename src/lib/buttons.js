@@ -72,7 +72,7 @@ export async function handleButton(interaction) {
     }
 
     const qty = Number(arg);
-    const VALID_QTYS = [1, 3, 5, 10];
+    const VALID_QTYS = [1, 3, 5, 10, 25, 50, 100];
     if (!VALID_QTYS.includes(qty)) return ephemeralReply(interaction, '❌ Invalid quantity.');
 
     // Multi-open (3, 5, 10) — no animation, show summary.

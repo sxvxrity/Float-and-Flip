@@ -71,13 +71,18 @@ export async function casePicker(userId) {
       `📦 Each case costs **${cost.toLocaleString()}** coins\n\n` +
       `How many do you want to open?`)
     .setFooter(ownedFooter(userId));
-  const qtyRow = row(
-    b('case:open:1',  '× 1',  ButtonStyle.Primary),
-    b('case:open:3',  '× 3',  ButtonStyle.Primary),
-    b('case:open:5',  '× 5',  ButtonStyle.Primary),
-    b('case:open:10', '× 10', ButtonStyle.Primary),
+  const qtyRow1 = row(
+    b('case:open:1',   '× 1',   ButtonStyle.Primary),
+    b('case:open:3',   '× 3',   ButtonStyle.Primary),
+    b('case:open:5',   '× 5',   ButtonStyle.Primary),
+    b('case:open:10',  '× 10',  ButtonStyle.Primary),
   );
-  return { embeds: [embed], components: [qtyRow, navRow()] };
+  const qtyRow2 = row(
+    b('case:open:25',  '× 25',  ButtonStyle.Secondary),
+    b('case:open:50',  '× 50',  ButtonStyle.Secondary),
+    b('case:open:100', '× 100', ButtonStyle.Secondary),
+  );
+  return { embeds: [embed], components: [qtyRow1, qtyRow2, navRow()] };
 }
 
 // ── OPEN CASE (single) ───────────────────────────────────────────────
